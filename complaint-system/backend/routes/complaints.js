@@ -59,9 +59,11 @@ function getAiAnalyzeUrl() {
 
 async function analyzeAudio(filePath) {
   const aiUrl = getAiAnalyzeUrl();
+  const stat = fs.statSync(filePath);
   const form = new FormData();
-  form.append('audio', fs.createReadStream(filePath));
+  form.append('audio', fs.createReadStream(filePath), { knownLength: stat.size });
   const headers = form.getHeaders();
+  headers['content-length'] = String(form.getLengthSync());
   // Prevent node-fetch stream premature close on gzipped responses from Cloudflare/Render
   headers['accept-encoding'] = 'identity';
   // First request after start-up can be slow while the model warms up.
@@ -70,7 +72,7 @@ async function analyzeAudio(filePath) {
     body: form,
     headers,
     compress: false,
-    timeout: 60000
+    timeout: 90000
   });
   if (!resp.ok) {
     const errBody = await resp.json().catch(() => ({}));

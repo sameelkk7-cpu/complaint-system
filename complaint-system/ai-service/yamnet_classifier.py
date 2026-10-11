@@ -25,7 +25,10 @@ MOCK_MODE=1 skips the neural network completely (testing only - results are fake
 """
 
 import os
+import threading
 import numpy as np
+
+_lock = threading.Lock()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.environ.get("YAMNET_MODEL_PATH", os.path.join(HERE, "models", "yamnet.tflite"))
@@ -72,8 +75,9 @@ _label_to_index = None
 def load_model():
     """Load the bundled YAMNet tflite model once (called at service start-up)."""
     global _interpreter, _input_index, _output_index, _class_names, _label_to_index
-    if _interpreter is not None:
-        return
+    with _lock:
+        if _interpreter is not None:
+            return
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(f"YAMNet model not found at {MODEL_PATH}")
@@ -117,11 +121,12 @@ def _frame_scores(waveform: np.ndarray) -> np.ndarray:
     if len(waveform) < WINDOW:
         waveform = np.pad(waveform, (0, WINDOW - len(waveform)))
     out = []
-    for start in range(0, len(waveform) - WINDOW + 1, HOP):
-        chunk = waveform[start:start + WINDOW].astype(np.float32)
-        _interpreter.set_tensor(_input_index, chunk)
-        _interpreter.invoke()
-        out.append(_interpreter.get_tensor(_output_index)[0].copy())
+    with _lock:
+        for start in range(0, len(waveform) - WINDOW + 1, HOP):
+            chunk = waveform[start:start + WINDOW].astype(np.float32)
+            _interpreter.set_tensor(_input_index, chunk)
+            _interpreter.invoke()
+            out.append(_interpreter.get_tensor(_output_index)[0].copy())
     return np.array(out)
 
 
