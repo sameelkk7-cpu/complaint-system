@@ -18,14 +18,10 @@ const announcementRoutes = require('./routes/announcements');
 
 const app = express();
 
-// Configured CORS for Vercel production frontend and local development
-const allowedOrigins = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-const defaultOrigins = [
+// Explicitly allowed origins for production Vercel frontend and local development
+const allowedOrigins = [
   'https://complaint-system-2.vercel.app',
+  'https://complaint-system-2-182mdexw1-sameel2.vercel.app',
   'https://complaint-system-2-sameel2.vercel.app',
   'http://localhost:3000',
   'http://localhost:4000',
@@ -33,14 +29,25 @@ const defaultOrigins = [
   'http://127.0.0.1:4000'
 ];
 
-app.use(cors({
+if (process.env.CORS_ORIGIN) {
+  process.env.CORS_ORIGIN.split(',').forEach(o => {
+    const trimmed = o.trim();
+    if (trimmed && !allowedOrigins.includes(trimmed)) {
+      allowedOrigins.push(trimmed);
+    }
+  });
+}
+
+const corsOptions = {
   origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. curl, server-to-server)
     if (!origin) return callback(null, true);
+
+    // Allow configured origins, wildcard, or any Vercel deployment preview domain
     if (
       process.env.CORS_ORIGIN === '*' ||
       allowedOrigins.includes('*') ||
       allowedOrigins.includes(origin) ||
-      defaultOrigins.includes(origin) ||
       /\.vercel\.app$/.test(origin)
     ) {
       return callback(null, true);
@@ -48,9 +55,14 @@ app.use(cors({
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
-}));
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+  optionsSuccessStatus: 204
+};
+
+// Apply CORS middleware and handle preflight OPTIONS before authentication and routes
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 // Evidence files are NOT served publicly; they go through /api/complaints/:id/evidence/:kind (auth + permission check)

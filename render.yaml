@@ -36,7 +36,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        value: https://complaint-system-2.vercel.app,https://complaint-system-2-sameel2.vercel.app
+        value: https://complaint-system-2.vercel.app,https://complaint-system-2-182mdexw1-sameel2.vercel.app,https://complaint-system-2-sameel2.vercel.app
       - key: AI_SERVICE_URL
         value: https://complaint-system-ai.onrender.com/analyze
       - key: AI_MIN_CONFIDENCE
