@@ -1,6 +1,6 @@
 // Shared helper for talking to the backend API and managing the logged-in session.
 // In local development, defaults to '/api'. In production, uses the deployed Render backend URL (or CMS_API_URL override).
-const DEFAULT_BACKEND_URL = 'https://complaint-system-backend.onrender.com';
+const DEFAULT_BACKEND_URL = 'https://complaint-system-backend-gtrc.onrender.com';
 const API_BASE = (typeof window !== 'undefined' && (window.CMS_API_URL || window.__CMS_API_URL__))
   ? (window.CMS_API_URL || window.__CMS_API_URL__)
   : (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))

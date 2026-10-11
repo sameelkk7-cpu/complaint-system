@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://complaint-system-backend.onrender.com/api/$1"
+      "destination": "https://complaint-system-backend-gtrc.onrender.com/api/$1"
     },
     {
       "source": "/css/(.*)",
