@@ -61,8 +61,10 @@ def load_audio(file_storage) -> np.ndarray:
             pass
 
 
-@app.route("/", methods=["GET"])
+@app.route("/", methods=["GET", "POST"])
 def index():
+    if request.method == "POST":
+        return analyze()
     return jsonify({"status": "ok", "service": "AI Audio Verification microservice (YAMNet)", **yc.model_info()})
 
 

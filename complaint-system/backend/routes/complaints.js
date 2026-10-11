@@ -46,19 +46,46 @@ function blockOf(unit) {
   return m ? m[1] : null;
 }
 
+function getAiAnalyzeUrl() {
+  let url = (process.env.AI_SERVICE_URL || (process.env.NODE_ENV === 'production' ? 'https://complaint-system-ai-kxn8.onrender.com/analyze' : 'http://localhost:5001/analyze')).trim();
+  // If set to the legacy/non-suffixed domain, normalize to the active Render AI service
+  url = url.replace('https://complaint-system-ai.onrender.com', 'https://complaint-system-ai-kxn8.onrender.com');
+  url = url.replace(/\/+$/, '');
+  if (!url.endsWith('/analyze')) {
+    url = `${url}/analyze`;
+  }
+  return url;
+}
+
 async function analyzeAudio(filePath) {
-  const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:5001/analyze';
+  const aiUrl = getAiAnalyzeUrl();
   const form = new FormData();
   form.append('audio', fs.createReadStream(filePath));
+  const headers = form.getHeaders();
+  // Prevent node-fetch stream premature close on gzipped responses from Cloudflare/Render
+  headers['accept-encoding'] = 'identity';
   // First request after start-up can be slow while the model warms up.
-  const resp = await fetch(aiUrl, { method: 'POST', body: form, headers: form.getHeaders(), timeout: 60000 });
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(body.error || `AI service returned ${resp.status}`);
+  const resp = await fetch(aiUrl, {
+    method: 'POST',
+    body: form,
+    headers,
+    compress: false,
+    timeout: 60000
+  });
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(errBody.error || `AI service returned HTTP ${resp.status}`);
+  }
+  const body = await resp.json().catch(() => null);
+  if (!body || !body.top_category || typeof body.confidence !== 'number') {
+    throw new Error('AI service returned invalid or missing classification result');
+  }
   return body;
 }
 
 // Decide whether the audio supports the complaint.
 function verdictFor(claimedType, ai) {
+  if (!ai || !ai.top_category || typeof ai.confidence !== 'number') return 'Inconclusive';
   if (ai.top_category === 'Silence') return 'Inconclusive';
   if (ai.confidence < MIN_CONF) return 'Inconclusive';
   if (claimedType && claimedType !== 'Other' && ai.top_category !== claimedType) return 'Mismatch';
@@ -206,3 +233,7 @@ router.post('/:id/feedback', requireAuth, requireRole('user'), (req, res) => {
 module.exports = router;
 module.exports.parseDetails = parseDetails;
 module.exports.logAction = logAction;
+module.exports.analyzeAudio = analyzeAudio;
+module.exports.verdictFor = verdictFor;
+module.exports.UPLOAD_ROOT = UPLOAD_ROOT;
+module.exports.getAiAnalyzeUrl = getAiAnalyzeUrl;

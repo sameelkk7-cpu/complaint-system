@@ -182,7 +182,7 @@ async function openComplaintDetail(id, extraHtml = '') {
         ${c.rating ? `<dt>Rating</dt><dd>${'★'.repeat(c.rating)}${'☆'.repeat(5 - c.rating)} ${esc(c.feedback || '')}</dd>` : ''}
       </dl>
       <h3>Evidence</h3>${evidenceHtml(c)}
-      ${c.has_audio ? `<h3>AI audio verification</h3>${aiReportHtml(c)}` : ''}
+      ${c.has_audio ? `<h3>AI audio verification</h3>${aiReportHtml(c)}${currentUser && currentUser.role === 'admin' ? `<div style="margin-top:10px;"><button class="secondary" id="reanalyzeBtn-${c.id}" onclick="triggerReanalyze(${c.id})">🔄 Re-run AI analysis</button><span id="reanalyzeStatus-${c.id}" class="muted" style="margin-left:8px;"></span></div>` : ''}` : ''}
       ${extraHtml}
       <h3>Progress</h3>
       <ul class="timeline">${timeline.map(t => `<li><strong>${esc(actionLabel[t.action] || t.action)}</strong>
@@ -191,6 +191,21 @@ async function openComplaintDetail(id, extraHtml = '') {
     body.innerHTML = `<p class="error-msg">${esc(err.message)}</p>`;
   }
 }
+
+window.triggerReanalyze = async function(id) {
+  const btn = document.getElementById(`reanalyzeBtn-${id}`);
+  const status = document.getElementById(`reanalyzeStatus-${id}`);
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Analysing audio clip…';
+  try {
+    await apiFetch(`/admin/complaints/${id}/reanalyze`, { method: 'POST' });
+    if (typeof loadStats === 'function') loadStats();
+    openComplaintDetail(id);
+  } catch (err) {
+    if (status) status.textContent = 'Error: ' + err.message;
+    if (btn) btn.disabled = false;
+  }
+};
 
 // ---------- Announcements feed (resident + committee + admin) ----------
 async function loadAnnouncementFeed(container, { markSeen = true } = {}) {

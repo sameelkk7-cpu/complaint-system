@@ -38,7 +38,7 @@ services:
       - key: CORS_ORIGIN
         value: https://complaint-system-2.vercel.app,https://complaint-system-2-182mdexw1-sameel2.vercel.app,https://complaint-system-2-sameel2.vercel.app
       - key: AI_SERVICE_URL
-        value: https://complaint-system-ai.onrender.com/analyze
+        value: https://complaint-system-ai-kxn8.onrender.com/analyze
       - key: AI_MIN_CONFIDENCE
         value: 0.30
       # --------------------------------------------------------------------------

@@ -1,8 +1,10 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const mailer = require('../mailer');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { parseDetails, logAction } = require('./complaints');
+const { parseDetails, logAction, analyzeAudio, verdictFor, UPLOAD_ROOT } = require('./complaints');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -80,6 +82,44 @@ router.patch('/complaints/:id/review', (req, res) => {
       ? `Your complaint #${c.id} (${c.category}) was reviewed and accepted. It is now being handled.`
       : `Your complaint #${c.id} (${c.category}) was reviewed but could not be accepted. Please contact the admin if you have more evidence.`);
   res.json({ message: `Complaint marked ${newStatus}` });
+});
+
+// Re-run AI analysis on a complaint with audio
+router.post('/complaints/:id/reanalyze', async (req, res) => {
+  const c = db.prepare('SELECT * FROM complaints WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Complaint not found' });
+  if (!c.audio_path) return res.status(400).json({ error: 'No audio evidence attached to this complaint' });
+
+  const audioFilePath = path.join(UPLOAD_ROOT, 'audio', path.basename(c.audio_path));
+  if (!fs.existsSync(audioFilePath)) {
+    return res.status(404).json({ error: 'Audio file missing on server' });
+  }
+
+  try {
+    const ai = await analyzeAudio(audioFilePath);
+    const ai_verdict = verdictFor(c.claimed_noise_type, ai);
+    const newStatus = ai_verdict === 'Verified' ? 'Pending' : (c.status === 'Pending' ? 'Pending' : 'Unverified');
+    db.prepare(`
+      UPDATE complaints
+      SET ai_category = ?, ai_confidence = ?, noise_level = ?, ai_verdict = ?, ai_details = ?,
+          status = CASE WHEN status = 'Unverified' AND ? = 'Verified' THEN 'Pending' ELSE status END,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      ai.top_category, ai.confidence, ai.noise_level, ai_verdict,
+      JSON.stringify({
+        top_predictions: ai.top_predictions, category_scores: ai.category_scores,
+        noise_db_relative: ai.noise_db_relative, active_fraction: ai.active_fraction, mock: !!ai.mock
+      }),
+      ai_verdict, c.id
+    );
+    logAction(c.id, req.user.id, 'AI_REANALYZED',
+      `ai_category=${ai.top_category}, confidence=${ai.confidence}, verdict=${ai_verdict}`);
+    res.json(parseDetails(db.prepare(`${COMPLAINT_SELECT} WHERE c.id = ?`).get(c.id)));
+  } catch (err) {
+    console.error('Re-analysis error for complaint #' + c.id + ':', err.message);
+    res.status(502).json({ error: `AI analysis failed: ${err.message}` });
+  }
 });
 
 // Assign to a committee member and/or a block
