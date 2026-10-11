@@ -41,6 +41,7 @@ def _decode_with_ffmpeg(path: str) -> np.ndarray:
 
 def load_audio(file_storage) -> np.ndarray:
     """Load an uploaded clip -> mono float32 at 16 kHz."""
+    import soundfile as sf
     import librosa
 
     ext = os.path.splitext(file_storage.filename or "")[1] or ".wav"
@@ -50,10 +51,20 @@ def load_audio(file_storage) -> np.ndarray:
     try:
         file_storage.save(path)
         try:
-            wav, _ = librosa.load(path, sr=TARGET_SR, mono=True, duration=MAX_SECONDS)
+            wav, sr = sf.read(path, dtype="float32", always_2d=False)
+            if wav.ndim > 1:
+                wav = np.mean(wav, axis=1)
+            if sr != TARGET_SR:
+                wav = librosa.resample(wav, orig_sr=sr, target_sr=TARGET_SR)
+            if len(wav) > TARGET_SR * MAX_SECONDS:
+                wav = wav[:TARGET_SR * MAX_SECONDS]
+            return wav.astype(np.float32)
         except Exception:
-            wav = _decode_with_ffmpeg(path)
-        return wav.astype(np.float32)
+            try:
+                wav, _ = librosa.load(path, sr=TARGET_SR, mono=True, duration=MAX_SECONDS)
+                return wav.astype(np.float32)
+            except Exception:
+                return _decode_with_ffmpeg(path)
     finally:
         try:
             os.remove(path)
@@ -75,6 +86,7 @@ def health():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    import gc
     if "audio" not in request.files:
         return jsonify({"error": "No 'audio' file provided"}), 400
     try:
@@ -84,8 +96,11 @@ def analyze():
     if len(waveform) < 1600:  # < 0.1 s
         return jsonify({"error": "Audio clip is empty or too short"}), 422
     try:
-        return jsonify(yc.classify_audio(waveform, TARGET_SR))
+        res = yc.classify_audio(waveform, TARGET_SR)
+        gc.collect()
+        return jsonify(res)
     except Exception as exc:
+        gc.collect()
         return jsonify({"error": f"Classification failed: {exc}"}), 500
 
 
