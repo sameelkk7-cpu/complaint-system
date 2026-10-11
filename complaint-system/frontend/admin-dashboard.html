@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Console — Residents' Complaint Desk</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Residents' Complaint Desk<span>Admin console</span></div>
+  <div class="who"><span id="whoName"></span><button onclick="logout()">Sign out</button></div>
+</div>
+
+<div class="shell">
+  <div class="split" style="margin-bottom:20px;">
+    <div class="panel"><div class="stat" id="statPending">—</div><div class="stat-label">Pending</div></div>
+    <div class="panel"><div class="stat" id="statUnverified">—</div><div class="stat-label">Needs review</div></div>
+    <div class="panel"><div class="stat" id="statProgress">—</div><div class="stat-label">In progress</div></div>
+    <div class="panel"><div class="stat" id="statResolved">—</div><div class="stat-label">Resolved / Closed</div></div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="tab active" data-tab="complaints">All complaints</button>
+    <button class="tab" data-tab="flagged">Flagged for review</button>
+    <button class="tab" data-tab="users">Resident verification</button>
+    <button class="tab" data-tab="offenders">Repeat offenders</button>
+    <button class="tab" data-tab="reports">Reports</button>
+    <button class="tab" data-tab="announce">Announcements</button>
+  </div>
+
+  <div class="tabview" id="view-complaints">
+    <div class="panel panel-flush" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>#</th><th>Resident</th><th>Category</th><th>Photo</th><th>Audio</th><th>Status</th><th>AI check</th><th>Noise</th><th>Assigned</th><th>Submitted</th><th>Actions</th></tr></thead>
+        <tbody id="complaintsBody"></tbody>
+      </table>
+      <div class="empty-state" id="complaintsEmpty" style="display:none;">No complaints yet.</div>
+    </div>
+  </div>
+
+  <div class="tabview" id="view-flagged" style="display:none;">
+    <p class="muted">These complaints were held back by the AI check (silent / unclear audio, sound that doesn't match what was reported, or AI unavailable). Open one to listen to the audio and see the photo before deciding.</p>
+    <div class="panel panel-flush" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>#</th><th>Category</th><th>Description</th><th>AI check</th><th>Evidence</th><th>Actions</th></tr></thead>
+        <tbody id="flaggedBody"></tbody>
+      </table>
+      <div class="empty-state" id="flaggedEmpty" style="display:none;">Nothing flagged right now.</div>
+    </div>
+  </div>
+
+  <div class="tabview" id="view-users" style="display:none;">
+    <div class="panel panel-flush" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Flat / Block</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tabview" id="view-offenders" style="display:none;">
+    <div class="panel panel-flush">
+      <table>
+        <thead><tr><th>Flat / unit complained about</th><th>Complaints</th><th>Resolved</th><th>Latest</th></tr></thead>
+        <tbody id="offendersBody"></tbody>
+      </table>
+      <div class="empty-state" id="offendersEmpty" style="display:none;">No repeat patterns detected yet (a flat needs 2+ complaints).</div>
+    </div>
+  </div>
+
+  <div class="tabview" id="view-reports" style="display:none;">
+    <div id="reportsBox"></div>
+  </div>
+
+  <div class="tabview" id="view-announce" style="display:none;">
+    <div class="panel">
+      <h2>Post an announcement</h2>
+      <p class="muted">Appears instantly on every resident's and committee member's page, and can also be e-mailed to them.</p>
+      <label for="annTitle">Title</label>
+      <input type="text" id="annTitle">
+      <label for="annBody">Message</label>
+      <textarea id="annBody" placeholder="e.g. Quiet hours are 10pm–7am — please keep noise down."></textarea>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400;">
+        <input type="checkbox" id="annEmail" checked style="width:auto;"> Also send by e-mail to all approved residents &amp; committee members
+      </label>
+      <p class="muted" id="mailModeNote"></p>
+      <button style="margin-top:6px;" id="annBtn" onclick="postAnnouncement()">Broadcast</button>
+      <p class="success-msg" id="annMsg" style="display:none;"></p>
+      <p class="error-msg" id="annErr" style="display:none;"></p>
+    </div>
+    <h2 style="margin-top:24px;">Past announcements</h2>
+    <div id="annList"></div>
+  </div>
+</div>
+
+<dialog id="assignDialog">
+  <div class="dlg-head"><h2>Assign complaint <span id="assignId"></span></h2><button class="secondary" onclick="assignDialog.close()">Cancel</button></div>
+  <div class="dlg-body">
+    <label for="assignMember">Committee member</label>
+    <select id="assignMember"></select>
+    <label for="assignBlock">Block / wing (auto-filled from the member; override if needed)</label>
+    <input type="text" id="assignBlock" placeholder="e.g. B">
+    <button style="margin-top:14px;" id="assignSave">Save assignment</button>
+    <p class="error-msg" id="assignErr" style="display:none;"></p>
+  </div>
+</dialog>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireSession('admin');
+  if (user) document.getElementById('whoName').textContent = user.name;
+  const STATUSES = ['Pending', 'In Progress', 'Resolved', 'Closed', 'Rejected'];
+
+  document.querySelectorAll('.nav-tabs .tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.nav-tabs .tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tabview').forEach(v => v.style.display = 'none');
+      btn.classList.add('active');
+      document.getElementById(`view-${btn.dataset.tab}`).style.display = '';
+      ({ flagged: loadFlagged, users: loadUsers, offenders: loadOffenders, reports: loadReports, announce: loadAnnouncementsAdmin })[btn.dataset.tab]?.();
+    };
+  });
+  const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { alert(err.message); } };
+
+  async function loadStats() {
+    const rows = await apiFetch('/admin/complaints');
+    const count = s => rows.filter(r => r.status === s).length;
+    statPending.textContent = count('Pending'); statUnverified.textContent = count('Unverified');
+    statProgress.textContent = count('In Progress'); statResolved.textContent = count('Resolved') + count('Closed');
+    renderComplaints(rows);
+  }
+
+  function renderComplaints(rows) {
+    const body = document.getElementById('complaintsBody');
+    body.innerHTML = '';
+    complaintsEmpty.style.display = rows.length ? 'none' : 'block';
+    rows.forEach(c => {
+      const tr = document.createElement('tr');
+      const photoCell = c.has_photo
+        ? `<button class="secondary" style="font-size:0.82rem;padding:4px 10px;" onclick="viewPhoto(${c.id})">📷 View</button>`
+        : '<span class="muted">—</span>';
+      const audioCell = c.has_audio
+        ? `<button class="secondary" style="font-size:0.82rem;padding:4px 10px;" onclick="viewAudio(${c.id})">🎙️ Listen</button>`
+        : '<span class="muted">—</span>';
+      tr.innerHTML = `
+        <td><button class="row-link" onclick="openComplaintDetail(${c.id})">#${c.id}</button></td>
+        <td>${esc(c.resident_name)}<div class="muted">${esc(c.resident_flat || '')}</div></td>
+        <td>${esc(c.category)}${c.against_unit ? `<div class="muted">vs ${esc(c.against_unit)}</div>` : ''}</td>
+        <td>${photoCell}</td>
+        <td>${audioCell}</td>
+        <td><span class="tag ${statusTagClass(c.status)}">${esc(c.status)}</span></td>
+        <td>${c.has_audio ? `${verdictTag(c.ai_verdict)}<div class="muted">${aiSummary(c)}</div>` : '—'}</td>
+        <td>${c.noise_level ? `<span class="noise-${esc(c.noise_level)}">${esc(c.noise_level)}</span>` : '—'}</td>
+        <td>${esc(c.assigned_to_name || '')}${c.assigned_block ? `<div class="muted">Block ${esc(c.assigned_block)}</div>` : (c.assigned_to_name ? '' : '—')}</td>
+        <td>${fmtDate(c.created_at)}</td>
+        <td>
+          <select onchange="changeStatus(${c.id}, this.value)">
+            <option value="">Set status…</option>
+            ${STATUSES.filter(s => s !== c.status).map(s => `<option value="${s}">${s}</option>`).join('')}
+          </select>
+          <button class="secondary" style="margin-top:6px;" onclick="openAssign(${c.id}, '${esc(c.assigned_block || '')}')">Assign</button>
+        </td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  const changeStatus = safe(async (id, status) => { if (!status) return; await apiFetch(`/admin/complaints/${id}/status`, { method: 'PATCH', body: { status } }); loadStats(); });
+
+  // ---- Assign dialog ----
+  let assignCid = null, committee = [];
+  const openAssign = safe(async (id, block) => {
+    assignCid = id; assignId.textContent = '#' + id;
+    committee = await apiFetch('/admin/committee');
+    assignMember.innerHTML = '<option value="">— none (block only) —</option>' + committee.map(m => `<option value="${m.id}" data-block="${esc(m.block || '')}">${esc(m.name)}${m.block ? ' (Block ' + esc(m.block) + ')' : ''}</option>`).join('');
+    assignBlock.value = block; assignErr.style.display = 'none';
+    assignDialog.showModal();
+  });
+  assignMember.onchange = () => { const o = assignMember.selectedOptions[0]; if (o && o.dataset.block) assignBlock.value = o.dataset.block; };
+  assignSave.onclick = async () => {
+    try {
+      await apiFetch(`/admin/complaints/${assignCid}/assign`, { method: 'PATCH', body: { residency_user_id: assignMember.value || null, assigned_block: assignBlock.value } });
+      assignDialog.close(); loadStats();
+    } catch (err) { assignErr.textContent = err.message; assignErr.style.display = 'block'; }
+  };
+
+  // ---- Flagged ----
+  const loadFlagged = safe(async () => {
+    const body = document.getElementById('flaggedBody'); body.innerHTML = '';
+    const rows = await apiFetch('/admin/complaints?status=Unverified');
+    flaggedEmpty.style.display = rows.length ? 'none' : 'block';
+    rows.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>#${c.id}</td><td>${esc(c.category)}</td><td style="max-width:260px;">${esc(c.description)}</td>
+        <td>${c.has_audio ? `${verdictTag(c.ai_verdict)}<div class="muted">${aiSummary(c)}</div>` : '—'}</td>
+        <td><button class="secondary" onclick="openComplaintDetail(${c.id})">View evidence</button></td>
+        <td><div class="btn-row"><button onclick="reviewFlagged(${c.id}, 'accept')">Accept</button><button class="danger" onclick="reviewFlagged(${c.id}, 'reject')">Reject</button></div></td>`;
+      body.appendChild(tr);
+    });
+  });
+  const reviewFlagged = safe(async (id, decision) => { await apiFetch(`/admin/complaints/${id}/review`, { method: 'PATCH', body: { decision } }); loadFlagged(); loadStats(); });
+
+  // ---- Users ----
+  const loadUsers = safe(async () => {
+    const body = document.getElementById('usersBody'); body.innerHTML = '';
+    (await apiFetch('/admin/users')).filter(u => u.role !== 'admin').forEach(u => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.role)}</td><td>${esc(u.flat_number || '')} ${esc(u.block || '')}</td>
+        <td><span class="tag ${u.status === 'approved' ? 'tag-resolved' : u.status === 'pending' ? 'tag-pending' : 'tag-rejected'}">${esc(u.status)}</span></td>
+        <td><div class="btn-row">
+          ${u.status !== 'approved' ? `<button onclick="setUserStatus(${u.id}, 'approved')">Approve</button>` : ''}
+          ${u.status === 'pending' ? `<button class="secondary" onclick="setUserStatus(${u.id}, 'rejected')">Reject</button>` : ''}
+          ${u.status === 'approved' ? `<button class="danger" onclick="setUserStatus(${u.id}, 'deactivated')">Deactivate</button>` : ''}
+        </div></td>`;
+      body.appendChild(tr);
+    });
+  });
+  const setUserStatus = safe(async (id, status) => { await apiFetch(`/admin/users/${id}/status`, { method: 'PATCH', body: { status } }); loadUsers(); });
+
+  // ---- Repeat offenders ----
+  const loadOffenders = safe(async () => {
+    const body = document.getElementById('offendersBody'); body.innerHTML = '';
+    const rows = await apiFetch('/admin/repeat-offenders');
+    offendersEmpty.style.display = rows.length ? 'none' : 'block';
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><strong>${esc(r.unit)}</strong></td><td>${r.complaint_count}</td><td>${r.resolved_count}</td><td>${fmtDate(r.last_complaint)}</td>`;
+      body.appendChild(tr);
+    });
+  });
+
+  // ---- Reports ----
+  function bars(rows, key) {
+    const max = Math.max(1, ...rows.map(r => r.count));
+    return rows.length ? rows.map(r => `<div class="bar-row"><span class="lbl">${esc(r[key])}</span><span class="bar" style="width:${Math.round(r.count / max * 220)}px"></span><span class="val">${r.count}</span></div>`).join('') : '<p class="muted">No data yet.</p>';
+  }
+  const loadReports = safe(async () => {
+    const r = await apiFetch('/admin/reports/summary');
+    reportsBox.innerHTML = `
+      <div class="split">
+        <div class="panel"><div class="stat">${r.total}</div><div class="stat-label">Total complaints</div></div>
+        <div class="panel"><div class="stat">${r.avgResolutionHours != null ? r.avgResolutionHours.toFixed(1) + ' h' : '—'}</div><div class="stat-label">Avg. time to resolve</div></div>
+        <div class="panel"><div class="stat">${r.avgRating != null ? r.avgRating.toFixed(1) + ' / 5' : '—'}</div><div class="stat-label">Avg. resident rating (${r.ratedCount})</div></div>
+      </div>
+      <div class="split">
+        <div class="panel"><h3>By status</h3>${bars(r.byStatus, 'status')}</div>
+        <div class="panel"><h3>By category</h3>${bars(r.byCategory, 'category')}</div>
+      </div>
+      <div class="split">
+        <div class="panel"><h3>Sounds detected by AI</h3>${bars(r.byAiCategory, 'category')}</div>
+        <div class="panel"><h3>AI verification outcomes</h3>${bars(r.byVerdict, 'verdict')}</div>
+      </div>
+      <button onclick="downloadCsv()">⬇ Download all complaints (CSV)</button>`;
+  });
+  const downloadCsv = safe(async () => {
+    const resp = await fetch(`${API_BASE}/admin/reports/export.csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!resp.ok) throw new Error('Export failed');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(await resp.blob()); a.download = 'complaints.csv'; a.click();
+  });
+
+  // ---- Announcements ----
+  const loadAnnouncementsAdmin = safe(async () => {
+    const m = await apiFetch('/admin/email-mode');
+    mailModeNote.textContent = m.mode === 'smtp' ? 'E-mail is configured: messages will be delivered to residents\' inboxes.'
+      : 'E-mail is in DEMO mode (no SMTP set up in backend/.env): messages are written to backend/outbox.log instead of being sent.';
+    const rows = await apiFetch('/admin/announcements');
+    annList.innerHTML = rows.length ? rows.map(a => `
+      <div class="panel announce-card">
+        <div style="display:flex; justify-content:space-between; gap:12px;">
+          <div><h2>${esc(a.title)}</h2><div class="muted">${fmtDate(a.created_at)}${a.emailed_count ? ` · emailed to ${a.emailed_count}` : ''}${a.email_failed_count ? ` · ${a.email_failed_count} failed` : ''}</div></div>
+          <button class="danger" onclick="deleteAnnouncement(${a.id})">Delete</button>
+        </div>
+        <p style="white-space:pre-wrap; color:var(--ink);">${esc(a.body)}</p>
+      </div>`).join('') : '<div class="empty-state">None yet.</div>';
+  });
+  const deleteAnnouncement = safe(async id => { if (confirm('Delete this announcement?')) { await apiFetch(`/admin/announcements/${id}`, { method: 'DELETE' }); loadAnnouncementsAdmin(); } });
+
+  async function postAnnouncement() {
+    annMsg.style.display = annErr.style.display = 'none';
+    const title = annTitle.value.trim(), body = annBody.value.trim();
+    if (!title || !body) { annErr.textContent = 'Please enter a title and a message.'; annErr.style.display = 'block'; return; }
+    annBtn.disabled = true; annBtn.textContent = 'Sending…';
+    try {
+      const r = await apiFetch('/admin/announcements', { method: 'POST', body: { title, body, send_email: annEmail.checked } });
+      let msg = 'Announcement posted — it is now visible on every resident\'s page.';
+      if (r.email_requested) msg += r.recipients === 0 ? ' No approved residents to e-mail yet.'
+        : r.email_mode === 'smtp' ? ` E-mailed ${r.emailed} of ${r.recipients} people${r.failed ? ` (${r.failed} failed — check the server log)` : ''}.`
+        : ` Demo mode: ${r.emailed} e-mails written to backend/outbox.log (set SMTP in .env to really send).`;
+      annMsg.textContent = msg; annMsg.style.display = 'block';
+      annTitle.value = ''; annBody.value = ''; loadAnnouncementsAdmin();
+    } catch (err) { annErr.textContent = err.message; annErr.style.display = 'block'; }
+    finally { annBtn.disabled = false; annBtn.textContent = 'Broadcast'; }
+  }
+
+  // ---- Photo lightbox ----
+  function viewPhoto(id) {
+    let dlg = document.getElementById('photoDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'photoDialog';
+      dlg.innerHTML = `
+        <div class="dlg-head">
+          <h2>Complaint Photo</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <a id="photoOpenLink" href="#" target="_blank" class="btn secondary" style="font-size:0.85rem;padding:6px 12px;text-decoration:none;">Open full size ↗</a>
+            <button class="secondary" onclick="this.closest('dialog').close()">Close</button>
+          </div>
+        </div>
+        <div class="dlg-body" style="text-align:center;padding:16px;">
+          <img id="photoLightboxImg" src="" alt="Complaint photo"
+               style="max-width:100%;max-height:70vh;border-radius:4px;border:1px solid var(--line);"
+               onerror="this.style.display='none';document.getElementById('photoLightboxErr').style.display='block';">
+          <p id="photoLightboxErr" style="display:none;color:var(--danger);margin-top:12px;">Could not load photo. <a id='photoErrLink' href='#' target='_blank'>Click here to open it directly.</a></p>
+        </div>`;
+      document.body.appendChild(dlg);
+    }
+    const url = evidenceUrl(id, 'photo');
+    document.getElementById('photoLightboxImg').src = url;
+    document.getElementById('photoLightboxImg').style.display = 'block';
+    document.getElementById('photoLightboxErr').style.display = 'none';
+    document.getElementById('photoOpenLink').href = url;
+    const errLink = document.getElementById('photoErrLink');
+    if (errLink) errLink.href = url;
+    dlg.showModal();
+  }
+
+  // ---- Audio player dialog ----
+  function viewAudio(id) {
+    let dlg = document.getElementById('audioDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'audioDialog';
+      dlg.innerHTML = `
+        <div class="dlg-head">
+          <h2>Complaint Audio</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <a id="audioDownloadLink" href="#" download class="btn secondary" style="font-size:0.85rem;padding:6px 12px;text-decoration:none;">⬇ Download</a>
+            <button class="secondary" onclick="document.getElementById('audioPlayerEl').pause(); this.closest('dialog').close()">Close</button>
+          </div>
+        </div>
+        <div class="dlg-body" style="padding:24px 16px;text-align:center;">
+          <audio id="audioPlayerEl" controls style="width:100%;max-width:480px;" preload="auto"></audio>
+          <p id="audioPlayerErr" style="display:none;color:var(--danger);margin-top:12px;">Could not load audio. <a id="audioErrLink" href="#" target="_blank">Try opening directly.</a></p>
+        </div>`;
+      document.body.appendChild(dlg);
+    }
+    const url = evidenceUrl(id, 'audio');
+    const player = document.getElementById('audioPlayerEl');
+    const errP   = document.getElementById('audioPlayerErr');
+    const dlLink = document.getElementById('audioDownloadLink');
+    const errLink= document.getElementById('audioErrLink');
+    player.src = url;
+    player.style.display = 'block';
+    errP.style.display = 'none';
+    dlLink.href = url;
+    if (errLink) errLink.href = url;
+    player.onerror = () => { player.style.display = 'none'; errP.style.display = 'block'; };
+    dlg.showModal();
+  }
+
+  loadStats().catch(console.error);
+</script>
+</body>
+</html>

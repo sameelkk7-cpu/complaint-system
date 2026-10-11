@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Complaints — Residents' Complaint Desk</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Residents' Complaint Desk<span>Resident portal</span></div>
+  <div class="who"><span id="whoName"></span><button onclick="logout()">Sign out</button></div>
+</div>
+
+<div class="shell">
+  <div id="newAnnounceBanner" class="panel announce-card" style="display:none;">
+    <strong>📢 <span id="bannerCount"></span> new announcement(s) from the admin.</strong>
+    <button class="secondary" style="margin-left:12px;" onclick="tabAnn.click()">Read now</button>
+  </div>
+
+  <div class="nav-tabs">
+    <button id="tabNew" class="active">Submit a complaint</button>
+    <button id="tabMine">My complaints</button>
+    <button id="tabAnn">Announcements</button>
+  </div>
+
+  <!-- Submit complaint -->
+  <div id="viewNew">
+    <div class="panel">
+      <h2>Raise a new complaint</h2>
+      <p class="muted">For noise complaints, add a short audio clip (5–10 seconds). It is analysed by AI (YAMNet) to check it matches what you reported. A photo is optional for any complaint.</p>
+      <form id="complaintForm">
+        <label for="category">Category</label>
+        <select id="category" required>
+          <option value="Noise Disturbance">Noise Disturbance</option>
+          <option value="Parking">Parking</option>
+          <option value="Cleanliness">Cleanliness</option>
+          <option value="Nuisance">Nuisance</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <div id="noiseTypeWrap">
+          <label for="claimed_noise_type">What kind of noise is it?</label>
+          <select id="claimed_noise_type">
+            <option value="">Not sure / skip</option>
+            <option>Dog Barking</option>
+            <option>Loud Music</option>
+            <option>Shouting</option>
+            <option>Construction Noise</option>
+            <option>Crying</option>
+            <option>Banging / Slamming</option>
+            <option>Party / Crowd Noise</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <label for="description">Description</label>
+        <textarea id="description" required placeholder="What happened, where, and when?"></textarea>
+
+        <div class="form-row">
+          <div>
+            <label for="incident_datetime">Date &amp; time of incident</label>
+            <input type="datetime-local" id="incident_datetime">
+          </div>
+          <div>
+            <label for="against_unit">Neighbour's flat (if known)</label>
+            <input type="text" id="against_unit" placeholder="e.g. B-402">
+          </div>
+        </div>
+
+        <label for="audio">Audio evidence</label>
+        <input type="file" id="audio" accept="audio/*">
+        <div class="rec-box">
+          <button type="button" class="secondary" id="recBtn">🎙️ Record with microphone</button>
+          <span id="recStatus" class="muted" style="margin-left:8px;"></span>
+          <audio id="audioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
+        </div>
+
+        <label for="photo">Photo evidence (optional)</label>
+        <input type="file" id="photo" accept="image/*">
+        <img id="photoPreview" class="photo-preview" alt="Photo preview">
+
+        <button type="submit" style="margin-top:18px;" id="submitBtn">Submit complaint</button>
+        <p class="muted" id="analyzingMsg" style="display:none;">Uploading evidence and analysing audio… this can take a few seconds.</p>
+        <p class="error-msg" id="errorMsg" style="display:none;"></p>
+        <div id="resultBox" style="display:none; margin-top:14px;"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- My complaints -->
+  <div id="viewMine" style="display:none;">
+    <div class="panel panel-flush">
+      <table>
+        <thead><tr><th>#</th><th>Category</th><th>Status</th><th>AI check</th><th>Noise</th><th>Submitted</th><th></th></tr></thead>
+        <tbody id="mineBody"></tbody>
+      </table>
+      <div class="empty-state" id="mineEmpty" style="display:none;">No complaints yet.</div>
+    </div>
+  </div>
+
+  <!-- Announcements -->
+  <div id="viewAnn" style="display:none;"><div id="annFeed"></div></div>
+</div>
+
+<dialog id="rateDialog">
+  <div class="dlg-head"><h2>Rate the resolution</h2><button class="secondary" onclick="rateDialog.close()">Cancel</button></div>
+  <div class="dlg-body">
+    <label for="rateVal">Rating</label>
+    <select id="rateVal"><option value="5">★★★★★ Great</option><option value="4">★★★★ Good</option><option value="3">★★★ Okay</option><option value="2">★★ Poor</option><option value="1">★ Very poor</option></select>
+    <label for="rateText">Comments (optional)</label>
+    <textarea id="rateText"></textarea>
+    <button style="margin-top:14px;" id="rateSubmit">Submit rating</button>
+    <p class="error-msg" id="rateErr" style="display:none;"></p>
+  </div>
+</dialog>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireSession('user');
+  if (user) document.getElementById('whoName').textContent = `${user.name} · ${user.flat_number || ''}`;
+
+  const tabNew = document.getElementById('tabNew'), tabMine = document.getElementById('tabMine'), tabAnn = document.getElementById('tabAnn');
+  const views = { New: document.getElementById('viewNew'), Mine: document.getElementById('viewMine'), Ann: document.getElementById('viewAnn') };
+  function show(name) {
+    [['New', tabNew], ['Mine', tabMine], ['Ann', tabAnn]].forEach(([k, b]) => { b.classList.toggle('active', k === name); views[k].style.display = k === name ? '' : 'none'; });
+    document.getElementById('newAnnounceBanner').style.display = 'none';
+    if (name === 'Mine') loadMine();
+    if (name === 'Ann') loadAnnouncementFeed(document.getElementById('annFeed')).then(() => refreshAnnouncementBadge(tabAnn));
+  }
+  tabNew.onclick = () => show('New'); tabMine.onclick = () => show('Mine'); tabAnn.onclick = () => show('Ann');
+
+  // Unread announcements: badge on the tab + banner at the top
+  (async () => {
+    await refreshAnnouncementBadge(tabAnn);
+    const n = tabAnn.querySelector('.badge');
+    if (n) { document.getElementById('bannerCount').textContent = n.textContent; document.getElementById('newAnnounceBanner').style.display = ''; }
+  })();
+
+  // Noise-type field only matters for noise complaints
+  const categorySel = document.getElementById('category');
+  const syncNoise = () => document.getElementById('noiseTypeWrap').style.display = categorySel.value === 'Noise Disturbance' ? '' : 'none';
+  categorySel.onchange = syncNoise; syncNoise();
+
+  // Photo preview
+  document.getElementById('photo').onchange = e => {
+    const f = e.target.files[0], img = document.getElementById('photoPreview');
+    if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
+  };
+
+  // Microphone recording (needs https:// or http://localhost)
+  let recordedFile = null, recording = false;
+  const recBtn = document.getElementById('recBtn'), recStatus = document.getElementById('recStatus'), preview = document.getElementById('audioPreview');
+  function setPreview(file) { preview.src = URL.createObjectURL(file); preview.style.display = 'block'; }
+  document.getElementById('audio').onchange = e => { recordedFile = null; if (e.target.files[0]) setPreview(e.target.files[0]); else preview.style.display = 'none'; };
+  recBtn.onclick = async () => {
+    try {
+      if (!recording) {
+        await AudioRecorder.start(sec => { recStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s`; if (sec >= 15) recBtn.click(); });
+        recording = true; recBtn.textContent = '⏹ Stop recording';
+      } else {
+        recording = false; recBtn.textContent = '🎙️ Record with microphone'; recStatus.textContent = 'Processing…';
+        recordedFile = await AudioRecorder.stop();
+        document.getElementById('audio').value = '';
+        setPreview(recordedFile); recStatus.textContent = 'Recording ready — it will be attached.';
+      }
+    } catch (err) {
+      recording = false; recBtn.textContent = '🎙️ Record with microphone';
+      recStatus.textContent = 'Microphone not available: ' + err.message;
+    }
+  };
+
+  document.getElementById('complaintForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorMsg = document.getElementById('errorMsg'), resultBox = document.getElementById('resultBox');
+    const analyzingMsg = document.getElementById('analyzingMsg'), submitBtn = document.getElementById('submitBtn');
+    errorMsg.style.display = 'none'; resultBox.style.display = 'none';
+
+    const form = new FormData();
+    form.append('category', categorySel.value);
+    if (categorySel.value === 'Noise Disturbance') form.append('claimed_noise_type', document.getElementById('claimed_noise_type').value);
+    form.append('description', document.getElementById('description').value);
+    form.append('incident_datetime', document.getElementById('incident_datetime').value);
+    form.append('against_unit', document.getElementById('against_unit').value);
+    const audioFile = recordedFile || document.getElementById('audio').files[0];
+    const photoFile = document.getElementById('photo').files[0];
+    if (audioFile) form.append('audio', audioFile);
+    if (photoFile) form.append('photo', photoFile);
+
+    submitBtn.disabled = true;
+    if (audioFile) analyzingMsg.style.display = 'block';
+    try {
+      const c = await apiFetch('/complaints', { method: 'POST', isForm: true, body: form });
+      let cls = '', html = `<strong>Complaint #${c.id} submitted.</strong>`;
+      if (c.has_audio) html += '<br>' + aiReportHtml(c).replace(/^<div class="ai-box/, '<div style="margin-top:8px" class="ai-box');
+      if (c.status === 'Unverified') { html += '<p style="margin:8px 0 0;">Your complaint was sent to the admin for a manual check because the audio could not be fully verified. You will be notified of the outcome.</p>'; cls = 'warn'; }
+      if (c.has_photo) html += '<p class="muted" style="margin:8px 0 0;">📷 Photo evidence attached.</p>';
+      resultBox.innerHTML = `<div class="ai-box ${cls}">${html}</div>`;
+      resultBox.style.display = 'block';
+      document.getElementById('complaintForm').reset();
+      recordedFile = null; preview.style.display = 'none'; recStatus.textContent = '';
+      document.getElementById('photoPreview').style.display = 'none'; syncNoise();
+    } catch (err) {
+      errorMsg.textContent = err.message; errorMsg.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false; analyzingMsg.style.display = 'none';
+    }
+  });
+
+  async function loadMine() {
+    const body = document.getElementById('mineBody'), empty = document.getElementById('mineEmpty');
+    body.innerHTML = '';
+    try {
+      const rows = await apiFetch('/complaints/mine');
+      empty.style.display = rows.length ? 'none' : 'block';
+      rows.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><button class="row-link" onclick="openComplaintDetail(${c.id})">#${c.id}</button></td>
+          <td>${esc(c.category)}${c.has_photo ? ' 📷' : ''}${c.has_audio ? ' 🎙️' : ''}</td>
+          <td><span class="tag ${statusTagClass(c.status)}">${esc(c.status)}</span></td>
+          <td>${c.has_audio ? `${verdictTag(c.ai_verdict)}<div class="muted">${aiSummary(c)}</div>` : '—'}</td>
+          <td>${c.noise_level ? `<span class="noise-${esc(c.noise_level)}">${esc(c.noise_level)}</span>` : '—'}</td>
+          <td>${fmtDate(c.created_at)}</td>
+          <td>${['Resolved', 'Closed'].includes(c.status) && !c.rating ? `<button class="secondary" onclick="giveFeedback(${c.id})">Rate</button>` : (c.rating ? '★'.repeat(c.rating) : '')}</td>`;
+        body.appendChild(tr);
+      });
+    } catch (err) { empty.textContent = err.message; empty.style.display = 'block'; }
+  }
+
+  let rateId = null;
+  function giveFeedback(id) { rateId = id; document.getElementById('rateErr').style.display = 'none'; rateDialog.showModal(); }
+  document.getElementById('rateSubmit').onclick = async () => {
+    try {
+      await apiFetch(`/complaints/${rateId}/feedback`, { method: 'POST', body: { rating: Number(document.getElementById('rateVal').value), feedback: document.getElementById('rateText').value } });
+      rateDialog.close(); loadMine();
+    } catch (err) { const e = document.getElementById('rateErr'); e.textContent = err.message; e.style.display = 'block'; }
+  };
+</script>
+</body>
+</html>

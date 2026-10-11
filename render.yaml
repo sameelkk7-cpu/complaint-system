@@ -1,0 +1,54 @@
+# Render Blueprint specification for Residential Complaint Management System
+# https://render.com/docs/blueprint-spec
+
+services:
+  # 1. AI Audio Verification Microservice (Python / YAMNet)
+  - type: web
+    name: complaint-system-ai
+    runtime: python
+    rootDir: complaint-system/ai-service
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MOCK_MODE
+        value: 0
+
+  # 2. Express Backend API (Node.js / SQLite)
+  - type: web
+    name: complaint-system-backend
+    runtime: node
+    rootDir: complaint-system/backend
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://complaint-system-2.vercel.app,https://complaint-system-2-sameel2.vercel.app
+      - key: AI_SERVICE_URL
+        value: https://complaint-system-ai.onrender.com/analyze
+      - key: AI_MIN_CONFIDENCE
+        value: 0.30
+      # --------------------------------------------------------------------------
+      # PERSISTENT STORAGE (OPTIONAL / PRODUCTION RECOMMENDATION):
+      # Free tier web services have ephemeral disks (reverts on redeploy/sleep).
+      # If upgrading to a paid Render Starter plan ($7/mo) with a persistent disk ($0.25/mo),
+      # uncomment the disk block and DATA_DIR env var below to persist SQLite DB & uploaded files:
+      # - key: DATA_DIR
+      #   value: /var/data
+    # disk:
+    #   name: complaint-storage
+    #   mountPath: /var/data
+    #   sizeGB: 1

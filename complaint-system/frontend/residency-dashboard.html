@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Committee Portal — Residents' Complaint Desk</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Residents' Complaint Desk<span>Residency / committee portal</span></div>
+  <div class="who"><span id="whoName"></span><button onclick="logout()">Sign out</button></div>
+</div>
+
+<div class="shell">
+  <div id="newAnnounceBanner" class="panel announce-card" style="display:none;">
+    <strong>📢 <span id="bannerCount"></span> new announcement(s) from the admin.</strong>
+    <button class="secondary" style="margin-left:12px;" id="bannerBtn">Read now</button>
+  </div>
+  <div class="nav-tabs">
+    <button class="tab active" data-tab="assigned">Assigned to me</button>
+    <button class="tab" data-tab="history">Resolution history</button>
+    <button class="tab" data-tab="ann" id="tabAnn">Announcements</button>
+  </div>
+
+  <div class="tabview" id="view-assigned">
+    <div id="assignedList"></div>
+    <div class="empty-state" id="assignedEmpty" style="display:none;">No open complaints assigned to you or your block right now.</div>
+  </div>
+
+  <div class="tabview" id="view-history" style="display:none;">
+    <div class="panel panel-flush">
+      <table>
+        <thead><tr><th>#</th><th>Category</th><th>Status</th><th>Response</th><th>Closed</th></tr></thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+      <div class="empty-state" id="historyEmpty" style="display:none;">No resolved cases yet.</div>
+    </div>
+  </div>
+
+  <div class="tabview" id="view-ann" style="display:none;"><div id="annFeed"></div></div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireSession('residency');
+  if (user) document.getElementById('whoName').textContent = `${user.name} · Block ${user.block || '—'}`;
+  const tabAnn = document.getElementById('tabAnn');
+  const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { alert(err.message); } };
+
+  document.querySelectorAll('.nav-tabs .tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.nav-tabs .tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tabview').forEach(v => v.style.display = 'none');
+      btn.classList.add('active');
+      document.getElementById(`view-${btn.dataset.tab}`).style.display = '';
+      document.getElementById('newAnnounceBanner').style.display = 'none';
+      if (btn.dataset.tab === 'history') loadHistory();
+      if (btn.dataset.tab === 'ann') loadAnnouncementFeed(document.getElementById('annFeed')).then(() => refreshAnnouncementBadge(tabAnn));
+    };
+  });
+  document.getElementById('bannerBtn').onclick = () => tabAnn.click();
+  (async () => {
+    await refreshAnnouncementBadge(tabAnn);
+    const n = tabAnn.querySelector('.badge');
+    if (n) { bannerCount.textContent = n.textContent; newAnnounceBanner.style.display = ''; }
+  })();
+
+  const loadAssigned = safe(async () => {
+    const list = document.getElementById('assignedList'), empty = document.getElementById('assignedEmpty');
+    list.innerHTML = '';
+    const rows = await apiFetch('/residency/complaints');
+    empty.style.display = rows.length ? 'none' : 'block';
+    rows.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'panel';
+      div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+          <div>
+            <h2>#${c.id} — ${esc(c.category)}${c.has_photo ? ' 📷' : ''}${c.has_audio ? ' 🎙️' : ''}</h2>
+            <div class="muted">Raised by ${esc(c.resident_name)} ${esc(c.resident_flat || '')}${c.against_unit ? ` · against ${esc(c.against_unit)}` : ''} · ${fmtDate(c.created_at)}</div>
+            <p style="color:var(--ink);">${esc(c.description)}</p>
+          </div>
+          <span class="tag ${statusTagClass(c.status)}">${esc(c.status)}</span>
+        </div>
+        ${c.has_audio ? `<p class="muted">AI evidence: ${verdictTag(c.ai_verdict)} ${aiSummary(c)}${c.noise_level ? ` · noise <span class="noise-${esc(c.noise_level)}">${esc(c.noise_level)}</span>` : ''}</p>` : ''}
+        <div class="btn-row"><button class="secondary" onclick="openComplaintDetail(${c.id})">View evidence &amp; AI report</button></div>
+        ${c.residency_response ? `<p class="muted"><strong>Your response so far:</strong> ${esc(c.residency_response)}</p>` : ''}
+        ${c.meeting_proposed_at ? `<p class="muted"><strong>Meeting proposed:</strong> ${fmtDate(c.meeting_proposed_at)}</p>` : ''}
+        <div class="form-row" style="margin-top:10px;">
+          <div>
+            <label>Respond / clarify (the resident is e-mailed)</label>
+            <textarea id="resp-${c.id}" placeholder="Write a response..."></textarea>
+            <button style="margin-top:8px;" onclick="respond(${c.id})">Send response</button>
+          </div>
+          <div>
+            <label>Propose a resolution meeting</label>
+            <input type="datetime-local" id="meet-${c.id}">
+            <div class="btn-row">
+              <button class="secondary" onclick="scheduleMeeting(${c.id})">Propose meeting</button>
+              <button onclick="resolve(${c.id})">Mark resolved</button>
+              <button class="danger" onclick="escalate(${c.id})">Escalate to admin</button>
+            </div>
+          </div>
+        </div>`;
+      list.appendChild(div);
+    });
+  });
+
+  const respond = safe(async id => {
+    const response = document.getElementById(`resp-${id}`).value.trim(); if (!response) return;
+    await apiFetch(`/residency/complaints/${id}/respond`, { method: 'PATCH', body: { response } }); loadAssigned();
+  });
+  const scheduleMeeting = safe(async id => {
+    const dt = document.getElementById(`meet-${id}`).value; if (!dt) return alert('Pick a date and time first.');
+    await apiFetch(`/residency/complaints/${id}/schedule-meeting`, { method: 'PATCH', body: { meeting_datetime: dt } }); loadAssigned();
+  });
+  const resolve = safe(async id => { if (confirm('Mark this complaint as resolved?')) { await apiFetch(`/residency/complaints/${id}/resolve`, { method: 'PATCH' }); loadAssigned(); } });
+  const escalate = safe(async id => {
+    const reason = prompt('Reason for escalating to admin?'); if (reason === null) return;
+    await apiFetch(`/residency/complaints/${id}/escalate`, { method: 'PATCH', body: { reason } }); loadAssigned();
+  });
+
+  const loadHistory = safe(async () => {
+    const body = document.getElementById('historyBody'), empty = document.getElementById('historyEmpty');
+    body.innerHTML = '';
+    const rows = await apiFetch('/residency/history');
+    empty.style.display = rows.length ? 'none' : 'block';
+    rows.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><button class="row-link" onclick="openComplaintDetail(${c.id})">#${c.id}</button></td><td>${esc(c.category)}</td>
+        <td><span class="tag ${statusTagClass(c.status)}">${esc(c.status)}</span></td><td>${esc(c.residency_response || '—')}</td><td>${fmtDate(c.updated_at)}</td>`;
+      body.appendChild(tr);
+    });
+  });
+
+  loadAssigned();
+</script>
+</body>
+</html>

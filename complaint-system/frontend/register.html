@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register — Residents' Complaint Desk</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="panel">
+    <div class="brand-mark">
+      <strong>Create your account</strong>
+      <span>Approval by the admin is required before you can sign in</span>
+    </div>
+    <form id="regForm">
+      <label for="name">Full name</label>
+      <input type="text" id="name" required>
+
+      <label for="email">Email</label>
+      <input type="email" id="email" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" minlength="6" required>
+
+      <label for="role">I am registering as</label>
+      <select id="role">
+        <option value="user">Resident (raise complaints)</option>
+        <option value="residency">Committee member (respond to complaints)</option>
+      </select>
+
+      <div class="form-row">
+        <div>
+          <label for="flat">Flat / unit number</label>
+          <input type="text" id="flat" placeholder="e.g. B-402">
+        </div>
+        <div>
+          <label for="block">Block / wing</label>
+          <input type="text" id="block" placeholder="e.g. B (same letter as in flat B-402)">
+        </div>
+      </div>
+
+      <button type="submit" style="width:100%; margin-top:18px;">Submit registration</button>
+      <p class="error-msg" id="errorMsg" style="display:none;"></p>
+      <p class="success-msg" id="successMsg" style="display:none;"></p>
+    </form>
+    <div class="switch-link">Already registered? <a href="index.html">Sign in</a></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  document.getElementById('regForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorMsg = document.getElementById('errorMsg');
+    const successMsg = document.getElementById('successMsg');
+    errorMsg.style.display = 'none';
+    successMsg.style.display = 'none';
+    try {
+      const data = await apiFetch('/auth/register', {
+        method: 'POST',
+        body: {
+          name: document.getElementById('name').value.trim(),
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value,
+          role: document.getElementById('role').value,
+          flat_number: document.getElementById('flat').value.trim(),
+          block: document.getElementById('block').value.trim()
+        }
+      });
+      successMsg.textContent = data.message;
+      successMsg.style.display = 'block';
+      document.getElementById('regForm').reset();
+    } catch (err) {
+      errorMsg.textContent = err.message;
+      errorMsg.style.display = 'block';
+    }
+  });
+</script>
+</body>
+</html>

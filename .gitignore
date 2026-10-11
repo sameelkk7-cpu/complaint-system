@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Environment files and secrets
+.env
+.env.*
+.env.local
+!.env.example
+.jwt_secret
+
+# Vercel & build caches
+.vercel/
+.cache/
+
+# Databases & logs
+*.db
+*.db-shm
+*.db-wal
+*.log
+outbox.log
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+
+# Uploaded evidence files (retain .gitkeep)
+uploads/audio/*
+uploads/photos/*
+!uploads/*/.gitkeep
+complaint-system/backend/uploads/audio/*
+complaint-system/backend/uploads/photos/*
+!complaint-system/backend/uploads/*/.gitkeep
+
+# Operating System files
+.DS_Store
+Thumbs.db

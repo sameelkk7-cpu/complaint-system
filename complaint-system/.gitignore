@@ -1,0 +1,15 @@
+node_modules/
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.jwt_secret
+backend/complaint_system.db*
+backend/outbox.log
+backend/uploads/audio/*
+backend/uploads/photos/*
+!backend/uploads/*/.gitkeep
+ai-service/.env
+ai-service/.env.*
+!ai-service/.env.example
+__pycache__/
+*.py[cod]
