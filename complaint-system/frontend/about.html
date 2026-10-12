@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="About the Residents' Complaint Desk — a private, society-operated portal for reporting noise and nuisance complaints within a residential community.">
+<meta name="robots" content="index, follow">
+<title>About — Residents' Complaint Desk</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .about-wrap { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+  .about-wrap h1 { margin-top: 0; }
+  .about-wrap section { margin-bottom: 32px; }
+  .about-wrap h2 { border-bottom: 1px solid var(--border, #ddd); padding-bottom: 4px; }
+  .back-link { display: inline-block; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<div class="about-wrap">
+  <a class="back-link" href="index.html">← Back to sign-in</a>
+
+  <h1>About the Residents' Complaint Desk</h1>
+
+  <section>
+    <h2>What is this site?</h2>
+    <p>
+      The <strong>Residents' Complaint Desk</strong> is a <em>private, internally operated</em>
+      web portal designed for the residents and committee members of a residential housing society.
+      Its sole purpose is to allow residents to formally report noise and nuisance complaints
+      (e.g. dog barking, loud music, construction noise) within the community, and for the
+      elected committee to track, review, and resolve those complaints.
+    </p>
+    <p>
+      This site is <strong>not</strong> affiliated with, endorsed by, or operated by any
+      government authority, bank, telecommunications provider, or any third-party commercial
+      service. It is a stand-alone, self-hosted application for internal community use only.
+    </p>
+  </section>
+
+  <section>
+    <h2>Who operates this site?</h2>
+    <p>
+      This portal is operated by the <strong>residential society's management committee</strong>.
+      Access is strictly limited to:
+    </p>
+    <ul>
+      <li><strong>Residents</strong> — individuals who have registered and been approved by the admin</li>
+      <li><strong>Committee members</strong> — elected residency committee staff responsible for handling complaints</li>
+      <li><strong>Admin</strong> — the society's designated system administrator</li>
+    </ul>
+    <p>
+      New registrations require manual approval by the admin before sign-in is possible.
+      Unapproved or rejected accounts cannot log in.
+    </p>
+  </section>
+
+  <section>
+    <h2>How are credentials handled?</h2>
+    <p>
+      Your email address and password are transmitted only to this society's own backend server
+      (<code>complaint-system-backend-gtrc.onrender.com</code>) over an encrypted HTTPS connection.
+      Passwords are stored as irreversible cryptographic hashes (bcrypt) — plain-text passwords
+      are never retained. No credentials are shared with, forwarded to, or accessible by any
+      third party.
+    </p>
+  </section>
+
+  <section>
+    <h2>What data is collected?</h2>
+    <p>
+      When you submit a complaint, the following information may be stored:
+    </p>
+    <ul>
+      <li>Your name, flat/unit number, and email (provided at registration)</li>
+      <li>Complaint description, category, and reported incident time</li>
+      <li>Optional photo or audio evidence you attach to support the complaint</li>
+      <li>An AI-generated audio classification result (produced on-server using a local YAMNet model — audio files are never sent to an external AI service)</li>
+    </ul>
+    <p>
+      All data is stored within the society's own database. It is used solely for managing
+      complaints and is not sold, rented, or disclosed to third parties.
+    </p>
+  </section>
+
+  <section>
+    <h2>AI audio verification</h2>
+    <p>
+      When you attach an audio recording to a complaint, an on-premises AI model
+      (<a href="https://github.com/tensorflow/models/tree/master/research/audioset/yamnet" rel="noopener noreferrer" target="_blank">YAMNet</a>,
+      Apache-2.0, by Google) classifies the sound (e.g. "Dog Barking", "Loud Music"). This
+      classification helps the committee prioritise complaints. The model runs entirely on this
+      society's own infrastructure; your audio is never uploaded to an external AI provider.
+    </p>
+    <p>
+      If the AI classification is unavailable (e.g. the service is starting up), the complaint
+      is flagged for manual review by the committee — it is never silently discarded.
+    </p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>
+      If you have questions about this portal or your account, please contact your society's
+      committee via the usual community communication channels.
+    </p>
+  </section>
+
+  <footer class="auth-footer" style="margin-top: 48px;">
+    Residents' Complaint Desk &mdash; Society Noise &amp; Nuisance Management System<br>
+    <small>This private portal is operated by your residential society's committee.
+    It is not affiliated with any government body, bank, or third-party service.</small>
+  </footer>
+</div>
+</body>
+</html>

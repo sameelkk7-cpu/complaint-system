@@ -235,6 +235,26 @@ tr:last-child td { border-bottom: none; }
 }
 .switch-link { text-align: center; margin-top: 16px; font-size: 0.88rem; }
 
+/* ---- Auth-page operator identification (Safe Browsing compliance) ---- */
+.site-notice {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin: 0 0 18px;
+  line-height: 1.45;
+}
+.site-notice a { font-size: inherit; }
+.auth-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
 @media (max-width: 640px) {
   .form-row { flex-direction: column; gap: 0; }
   .split { flex-direction: column; }

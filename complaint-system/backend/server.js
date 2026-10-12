@@ -88,4 +88,18 @@ const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log(`Complaint Management System backend running on http://${HOST}:${PORT}`);
+
+  // Pre-warm the AI service so it is ready before the first complaint is submitted.
+  // Fire-and-forget: failures are logged but do not affect startup.
+  if (process.env.NODE_ENV === 'production') {
+    const fetch = require('node-fetch');
+    const { getAiAnalyzeUrl } = require('./routes/complaints');
+    const warmupUrl = getAiAnalyzeUrl().replace(/\/analyze$/, '/warmup');
+    setTimeout(() => {
+      fetch(warmupUrl, { method: 'GET', timeout: 60000 })
+        .then(r => r.json().catch(() => ({})))
+        .then(b => console.log('[AI warmup]', b.status || b))
+        .catch(e => console.warn('[AI warmup] could not reach AI service:', e.message));
+    }, 3000); // 3 s delay so the server socket is fully bound first
+  }
 });

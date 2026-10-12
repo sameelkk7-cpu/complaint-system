@@ -84,6 +84,20 @@ def health():
     return jsonify({"status": "ok", **yc.model_info()})
 
 
+@app.route("/warmup", methods=["GET"])
+def warmup():
+    """
+    Pre-load the model.  Called by the backend at startup and by Render health
+    checks so the worker is ready before the first real request arrives.
+    """
+    if not yc.MOCK_MODE:
+        try:
+            yc.load_model()
+        except Exception as exc:
+            return jsonify({"status": "error", "message": str(exc), **yc.model_info()}), 500
+    return jsonify({"status": "ok", "message": "model ready", **yc.model_info()})
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     import gc

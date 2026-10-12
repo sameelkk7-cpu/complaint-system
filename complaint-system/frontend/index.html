@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="google-site-verification" content="TR7neylDhE_WZOVUF7xNpwSIpIuF2txifoDV4UKWaKw" />
+<meta name="description" content="Residents' Complaint Desk — a private, society-operated portal for reporting noise and nuisance complaints within your residential community. This site is not affiliated with any government body or third-party service.">
+<meta name="robots" content="noindex, nofollow">
 <title>Sign in — Residents' Complaint Desk</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -12,18 +14,36 @@
   <div class="panel">
     <div class="brand-mark">
       <strong>Residents' Complaint Desk</strong>
-      <span>Noise &amp; nuisance reporting for your society</span>
+      <span>Noise &amp; nuisance reporting for your residential society</span>
     </div>
-    <form id="loginForm">
-      <label for="email">Email</label>
-      <input type="email" id="email" required autocomplete="username">
+
+    <!-- Site-identity notice — required for Google Safe Browsing compliance.
+         Clearly identifies operator, purpose, and that this is a private
+         residents-only portal, NOT affiliated with any third-party service. -->
+    <p class="site-notice">
+      This is a <strong>private, society-operated</strong> complaint portal for registered
+      residents and committee members only. Your credentials are verified against this
+      society's own database and are never shared with third parties.
+      <a href="about.html">About this site</a>
+    </p>
+
+    <form id="loginForm" autocomplete="on" novalidate>
+      <label for="email">Email address</label>
+      <input type="email" id="email" name="email" required autocomplete="username"
+             placeholder="resident@example.com">
       <label for="password">Password</label>
-      <input type="password" id="password" required autocomplete="current-password">
-      <button type="submit" style="width:100%; margin-top:18px;">Sign in</button>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+      <button type="submit" id="loginBtn" style="width:100%; margin-top:18px;">Sign in</button>
       <p class="error-msg" id="errorMsg" style="display:none;"></p>
     </form>
     <div class="switch-link">New here? <a href="register.html">Register an account</a></div>
   </div>
+
+  <footer class="auth-footer">
+    Residents' Complaint Desk &mdash; Society Noise &amp; Nuisance Management System<br>
+    <small>This private portal is operated by your residential society's committee.
+    It is not affiliated with any government body, bank, or third-party service.</small>
+  </footer>
 </div>
 
 <script src="js/api.js"></script>

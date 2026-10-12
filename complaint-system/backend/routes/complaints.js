@@ -57,7 +57,7 @@ function getAiAnalyzeUrl() {
   return url;
 }
 
-async function analyzeAudio(filePath) {
+async function analyzeAudio(filePath, { attempt = 1 } = {}) {
   const aiUrl = getAiAnalyzeUrl();
   const stat = fs.statSync(filePath);
   const form = new FormData();
@@ -66,23 +66,38 @@ async function analyzeAudio(filePath) {
   headers['content-length'] = String(form.getLengthSync());
   // Prevent node-fetch stream premature close on gzipped responses from Cloudflare/Render
   headers['accept-encoding'] = 'identity';
-  // First request after start-up can be slow while the model warms up.
-  const resp = await fetch(aiUrl, {
-    method: 'POST',
-    body: form,
-    headers,
-    compress: false,
-    timeout: 90000
-  });
-  if (!resp.ok) {
-    const errBody = await resp.json().catch(() => ({}));
-    throw new Error(errBody.error || `AI service returned HTTP ${resp.status}`);
+  // First request after start-up can be slow while the model warms up on the AI service.
+  // Render free-tier cold starts take up to ~50 s; model load adds ~5-10 s more.
+  // Use 150 s so we stay under gunicorn's 180 s worker timeout with margin.
+  const TIMEOUT_MS = 150000;
+  try {
+    const resp = await fetch(aiUrl, {
+      method: 'POST',
+      body: form,
+      headers,
+      compress: false,
+      timeout: TIMEOUT_MS
+    });
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.error || `AI service returned HTTP ${resp.status}`);
+    }
+    const body = await resp.json().catch(() => null);
+    if (!body || !body.top_category || typeof body.confidence !== 'number') {
+      throw new Error('AI service returned invalid or missing classification result');
+    }
+    return body;
+  } catch (err) {
+    // On a network timeout (cold-start wakeup), retry once before giving up.
+    const isTimeout = err.type === 'request-timeout' || err.code === 'ECONNRESET' ||
+                      err.code === 'ECONNREFUSED' || err.message.includes('network timeout');
+    if (isTimeout && attempt === 1) {
+      console.warn(`[AI] Timeout on attempt 1 (cold start?), retrying once — ${err.message}`);
+      // Re-create the form stream for the retry (streams can't be reused)
+      return analyzeAudio(filePath, { attempt: 2 });
+    }
+    throw err;
   }
-  const body = await resp.json().catch(() => null);
-  if (!body || !body.top_category || typeof body.confidence !== 'number') {
-    throw new Error('AI service returned invalid or missing classification result');
-  }
-  return body;
 }
 
 // Decide whether the audio supports the complaint.
