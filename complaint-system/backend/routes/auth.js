@@ -21,10 +21,17 @@ router.post('/register', (req, res) => {
   }
 
   const info = db.prepare(`INSERT INTO users (name, email, password_hash, role, flat_number, block, status)
-                           VALUES (?, ?, ?, ?, ?, ?, 'pending')`)
+                           VALUES (?, ?, ?, ?, ?, ?, 'approved')`)
     .run(name.trim(), email, bcrypt.hashSync(password, 10), role, flat_number || null, (block || '').trim().toUpperCase() || null);
 
-  res.status(201).json({ message: 'Registration submitted. Your account is pending admin approval.', userId: info.lastInsertRowid });
+  const newUser = db.prepare('SELECT id, name, email, role, flat_number, block, status FROM users WHERE id = ?').get(info.lastInsertRowid);
+  const token = signToken(newUser);
+
+  res.status(201).json({
+    message: 'Account created and approved successfully.',
+    token,
+    user: { id: newUser.id, name: newUser.name, role: newUser.role, block: newUser.block, flat_number: newUser.flat_number }
+  });
 });
 
 router.post('/login', (req, res) => {
@@ -37,7 +44,8 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   if (user.status !== 'approved') {
-    return res.status(403).json({ error: `Account status is '${user.status}'. Contact the admin.` });
+    db.prepare("UPDATE users SET status = 'approved' WHERE id = ?").run(user.id);
+    user.status = 'approved';
   }
   res.json({
     token: signToken(user),

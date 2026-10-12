@@ -1,7 +1,7 @@
 flask>=3.0
 numpy>=1.26
-librosa>=0.10.2
 soundfile>=0.12.1
+imageio-ffmpeg>=0.5.1,<0.7
 # Light-weight runtime for the bundled YAMNet .tflite model (no full TensorFlow needed).
 # If this fails to install on your Python version, use:  pip install tensorflow   (it also works)
 ai-edge-litert>=1.0

@@ -10,33 +10,100 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="auth-shell">
+<div class="auth-shell" style="max-width: 620px;">
   <div class="panel">
     <div class="brand-mark">
       <strong>Residents' Complaint Desk</strong>
       <span>Noise &amp; nuisance reporting for your residential society</span>
     </div>
 
-    <!-- Site-identity notice — required for Google Safe Browsing compliance.
-         Clearly identifies operator, purpose, and that this is a private
-         residents-only portal, NOT affiliated with any third-party service. -->
-    <p class="site-notice">
-      This is a <strong>private, society-operated</strong> complaint portal for registered
-      residents and committee members only. Your credentials are verified against this
-      society's own database and are never shared with third parties.
-      <a href="about.html">About this site</a>
-    </p>
+    <div class="nav-tabs" style="margin-bottom: 20px;">
+      <button id="authTabLogin" class="active" type="button" style="flex:1;">Sign in</button>
+      <button id="authTabSubmit" type="button" style="flex:1;">Submit a Complaint (No login needed)</button>
+    </div>
 
-    <form id="loginForm" autocomplete="on" novalidate>
-      <label for="email">Email address</label>
-      <input type="email" id="email" name="email" required autocomplete="username"
-             placeholder="resident@example.com">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" required autocomplete="current-password">
-      <button type="submit" id="loginBtn" style="width:100%; margin-top:18px;">Sign in</button>
-      <p class="error-msg" id="errorMsg" style="display:none;"></p>
-    </form>
-    <div class="switch-link">New here? <a href="register.html">Register an account</a></div>
+    <!-- Sign-in view -->
+    <div id="viewLogin">
+      <p class="site-notice">
+        This is a <strong>private, society-operated</strong> complaint portal for registered
+        residents and committee members.
+        <a href="about.html">About this site</a>
+      </p>
+
+      <form id="loginForm" autocomplete="on" novalidate>
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" required autocomplete="username"
+               placeholder="resident@example.com">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+        <button type="submit" id="loginBtn" style="width:100%; margin-top:18px;">Sign in</button>
+        <p class="error-msg" id="errorMsg" style="display:none;"></p>
+      </form>
+      <div class="switch-link">New resident? <a href="register.html">Register an account</a></div>
+    </div>
+
+    <!-- Direct submission view (No permissions / login needed) -->
+    <div id="viewDirectSubmit" style="display:none;">
+      <h3>Raise a Complaint Directly</h3>
+      <p class="muted" style="font-size:0.88rem;">No login or special permissions needed. Submissions are processed immediately and verified by AI audio analysis.</p>
+
+      <form id="publicComplaintForm">
+        <label for="pubCategory">Category</label>
+        <select id="pubCategory" required>
+          <option value="Noise Disturbance">Noise Disturbance</option>
+          <option value="Parking">Parking</option>
+          <option value="Cleanliness">Cleanliness</option>
+          <option value="Nuisance">Nuisance</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <div id="pubNoiseTypeWrap">
+          <label for="pubClaimedNoiseType">What kind of noise is it?</label>
+          <select id="pubClaimedNoiseType">
+            <option value="">Not sure / skip</option>
+            <option>Dog Barking</option>
+            <option>Loud Music</option>
+            <option>Shouting</option>
+            <option>Construction Noise</option>
+            <option>Crying</option>
+            <option>Banging / Slamming</option>
+            <option>Party / Crowd Noise</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <label for="pubDescription">Description</label>
+        <textarea id="pubDescription" required placeholder="What happened, where, and when?"></textarea>
+
+        <div class="form-row">
+          <div>
+            <label for="pubDatetime">Date &amp; time</label>
+            <input type="datetime-local" id="pubDatetime">
+          </div>
+          <div>
+            <label for="pubAgainstUnit">Neighbour's flat (if known)</label>
+            <input type="text" id="pubAgainstUnit" placeholder="e.g. B-402">
+          </div>
+        </div>
+
+        <label for="pubAudio">Audio evidence (optional, AI verified)</label>
+        <input type="file" id="pubAudio" accept="audio/*">
+        <div class="rec-box">
+          <button type="button" class="secondary" id="pubRecBtn">🎙️ Record with microphone</button>
+          <span id="pubRecStatus" class="muted" style="margin-left:8px;"></span>
+          <audio id="pubAudioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
+        </div>
+
+        <label for="pubPhoto">Photo evidence (optional)</label>
+        <input type="file" id="pubPhoto" accept="image/*">
+        <img id="pubPhotoPreview" class="photo-preview" alt="Photo preview" style="display:none;">
+
+        <button type="submit" style="width:100%; margin-top:18px;" id="pubSubmitBtn">Submit complaint</button>
+        <p class="muted" id="pubAnalyzingMsg" style="display:none;">Uploading evidence and running AI audio verification… please wait.</p>
+        <p class="error-msg" id="pubErrorMsg" style="display:none;"></p>
+        <div id="pubResultBox" style="display:none; margin-top:14px;"></div>
+      </form>
+    </div>
   </div>
 
   <footer class="auth-footer">
@@ -48,10 +115,28 @@
 
 <script src="js/api.js"></script>
 <script>
-  // If already logged in, skip straight to the right dashboard.
-  const existing = getUser();
-  if (existing && getToken()) window.location.href = `${existing.role}-dashboard.html`;
+  // Tabs
+  const tabLogin = document.getElementById('authTabLogin');
+  const tabSubmit = document.getElementById('authTabSubmit');
+  const viewLogin = document.getElementById('viewLogin');
+  const viewSubmit = document.getElementById('viewDirectSubmit');
 
+  tabLogin.onclick = () => {
+    tabLogin.classList.add('active'); tabSubmit.classList.remove('active');
+    viewLogin.style.display = ''; viewSubmit.style.display = 'none';
+  };
+  tabSubmit.onclick = () => {
+    tabSubmit.classList.add('active'); tabLogin.classList.remove('active');
+    viewLogin.style.display = 'none'; viewSubmit.style.display = '';
+  };
+
+  // If already logged in, show resident dashboard
+  const existing = getUser();
+  if (existing && getToken()) {
+    // Keep user on dashboard if signed in
+  }
+
+  // Login handler
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errorMsg = document.getElementById('errorMsg');
@@ -69,6 +154,93 @@
     } catch (err) {
       errorMsg.textContent = err.message;
       errorMsg.style.display = 'block';
+    }
+  });
+
+  // Category change sync
+  const pubCategorySel = document.getElementById('pubCategory');
+  const syncNoise = () => {
+    document.getElementById('pubNoiseTypeWrap').style.display = pubCategorySel.value === 'Noise Disturbance' ? '' : 'none';
+  };
+  pubCategorySel.onchange = syncNoise;
+  syncNoise();
+
+  // Photo preview
+  document.getElementById('pubPhoto').onchange = e => {
+    const f = e.target.files[0], img = document.getElementById('pubPhotoPreview');
+    if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
+  };
+
+  // Mic recording
+  let pubRecordedFile = null, pubRecording = false;
+  const pubRecBtn = document.getElementById('pubRecBtn'), pubRecStatus = document.getElementById('pubRecStatus'), pubPreview = document.getElementById('pubAudioPreview');
+  function setPubPreview(file) { pubPreview.src = URL.createObjectURL(file); pubPreview.style.display = 'block'; }
+  document.getElementById('pubAudio').onchange = e => {
+    pubRecordedFile = null;
+    if (e.target.files[0]) setPubPreview(e.target.files[0]); else pubPreview.style.display = 'none';
+  };
+  pubRecBtn.onclick = async () => {
+    try {
+      if (!pubRecording) {
+        await AudioRecorder.start(sec => {
+          pubRecStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s`;
+          if (sec >= 15) pubRecBtn.click();
+        });
+        pubRecording = true; pubRecBtn.textContent = '⏹ Stop recording';
+      } else {
+        pubRecording = false; pubRecBtn.textContent = '🎙️ Record with microphone'; pubRecStatus.textContent = 'Processing…';
+        pubRecordedFile = await AudioRecorder.stop();
+        document.getElementById('pubAudio').value = '';
+        setPubPreview(pubRecordedFile);
+        pubRecStatus.textContent = 'Recording ready — it will be attached.';
+      }
+    } catch (err) {
+      pubRecording = false; pubRecBtn.textContent = '🎙️ Record with microphone';
+      pubRecStatus.textContent = 'Microphone unavailable: ' + err.message;
+    }
+  };
+
+  // Direct complaint submission
+  document.getElementById('publicComplaintForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorMsg = document.getElementById('pubErrorMsg'), resultBox = document.getElementById('pubResultBox');
+    const analyzingMsg = document.getElementById('pubAnalyzingMsg'), submitBtn = document.getElementById('pubSubmitBtn');
+    errorMsg.style.display = 'none'; resultBox.style.display = 'none';
+
+    const form = new FormData();
+    form.append('category', pubCategorySel.value);
+    if (pubCategorySel.value === 'Noise Disturbance') {
+      form.append('claimed_noise_type', document.getElementById('pubClaimedNoiseType').value);
+    }
+    form.append('description', document.getElementById('pubDescription').value);
+    form.append('incident_datetime', document.getElementById('pubDatetime').value);
+    form.append('against_unit', document.getElementById('pubAgainstUnit').value);
+
+    const audioFile = pubRecordedFile || document.getElementById('pubAudio').files[0];
+    const photoFile = document.getElementById('pubPhoto').files[0];
+    if (audioFile) form.append('audio', audioFile);
+    if (photoFile) form.append('photo', photoFile);
+
+    submitBtn.disabled = true;
+    if (audioFile) analyzingMsg.style.display = 'block';
+    try {
+      const c = await apiFetch('/complaints', { method: 'POST', isForm: true, body: form });
+      let html = `<strong style="font-size:1.05rem;">✅ Complaint #${c.id} successfully submitted!</strong>`;
+      html += `<p style="margin:6px 0;">Status: <strong>${esc(c.status)}</strong> — Your complaint is queued for resolution.</p>`;
+      if (c.has_audio) {
+        html += '<br>' + aiReportHtml(c).replace(/^<div class="ai-box/, '<div style="margin-top:8px" class="ai-box');
+      }
+      if (c.has_photo) html += '<p class="muted" style="margin:8px 0 0;">📷 Photo evidence attached.</p>';
+      resultBox.innerHTML = `<div class="ai-box">${html}</div>`;
+      resultBox.style.display = 'block';
+      document.getElementById('publicComplaintForm').reset();
+      pubRecordedFile = null; pubPreview.style.display = 'none'; pubRecStatus.textContent = '';
+      document.getElementById('pubPhotoPreview').style.display = 'none'; syncNoise();
+    } catch (err) {
+      errorMsg.textContent = err.message;
+      errorMsg.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false; analyzingMsg.style.display = 'none';
     }
   });
 </script>

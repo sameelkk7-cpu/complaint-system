@@ -117,8 +117,13 @@
 
 <script src="js/api.js"></script>
 <script>
-  const user = requireSession('user');
-  if (user) document.getElementById('whoName').textContent = `${user.name} · ${user.flat_number || ''}`;
+  const user = requireSession();
+  if (user) {
+    let extra = '';
+    if (user.role === 'admin') extra = ` · <a href="admin-dashboard.html" style="color:#fff; text-decoration:underline; font-weight:600;">Admin Console</a>`;
+    if (user.role === 'residency') extra = ` · <a href="residency-dashboard.html" style="color:#fff; text-decoration:underline; font-weight:600;">Committee Console</a>`;
+    document.getElementById('whoName').innerHTML = `${esc(user.name)}${user.flat_number ? ' · ' + esc(user.flat_number) : ''}${extra}`;
+  }
 
   const tabNew = document.getElementById('tabNew'), tabMine = document.getElementById('tabMine'), tabAnn = document.getElementById('tabAnn');
   const views = { New: document.getElementById('viewNew'), Mine: document.getElementById('viewMine'), Ann: document.getElementById('viewAnn') };

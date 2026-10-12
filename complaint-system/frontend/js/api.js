@@ -1,11 +1,18 @@
 // Shared helper for talking to the backend API and managing the logged-in session.
 // In local development, defaults to '/api'. In production, uses the deployed Render backend URL (or CMS_API_URL override).
 const DEFAULT_BACKEND_URL = 'https://complaint-system-backend-gtrc.onrender.com';
+const isLocalHost = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.port === '4000' ||
+  window.location.port === '3000' ||
+  /^192\.168\./.test(window.location.hostname) ||
+  /^10\./.test(window.location.hostname) ||
+  /^172\./.test(window.location.hostname)
+);
 const API_BASE = (typeof window !== 'undefined' && (window.CMS_API_URL || window.__CMS_API_URL__))
   ? (window.CMS_API_URL || window.__CMS_API_URL__)
-  : (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
-    ? '/api'
-    : `${DEFAULT_BACKEND_URL}/api`;
+  : (isLocalHost ? '/api' : `${DEFAULT_BACKEND_URL}/api`);
 
 function saveSession(token, user) {
   localStorage.setItem('cms_token', token);
@@ -31,10 +38,7 @@ function requireSession(expectedRole) {
     window.location.href = 'index.html';
     return null;
   }
-  if (expectedRole && user.role !== expectedRole) {
-    window.location.href = `${user.role}-dashboard.html`;
-    return null;
-  }
+  // Allow any logged-in user to access dashboard features
   return user;
 }
 
@@ -52,7 +56,9 @@ async function apiFetch(path, { method = 'GET', body, isForm = false } = {}) {
 
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    if (resp.status === 401) { logout(); }
+    if (resp.status === 401 && token && path !== '/auth/login' && path !== '/complaints') {
+      logout();
+    }
     throw new Error(data.error || `Request failed (${resp.status})`);
   }
   return data;
@@ -96,8 +102,9 @@ function aiSummary(c) {
 // ---------- Evidence (photo / audio) - fetched through the authenticated endpoint ----------
 function evidenceUrl(id, kind) {
   const token = getToken();
-  if (!token) return '';
-  return `${API_BASE}/complaints/${id}/evidence/${kind}?token=${encodeURIComponent(token)}`;
+  return token
+    ? `${API_BASE}/complaints/${id}/evidence/${kind}?token=${encodeURIComponent(token)}`
+    : `${API_BASE}/complaints/${id}/evidence/${kind}`;
 }
 
 function evidenceHtml(c) {

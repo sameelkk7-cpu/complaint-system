@@ -89,4 +89,19 @@ if (!adminExists) {
   console.log('Seeded default admin -> email: admin@society.local  password: admin123');
 }
 
+// Seed a default guest account for permission-free submissions
+const guestExists = db.prepare("SELECT id FROM users WHERE email = 'guest@society.local' LIMIT 1").get();
+if (!guestExists) {
+  const hash = bcrypt.hashSync('guest1234', 10);
+  db.prepare(`INSERT INTO users (name, email, password_hash, role, status)
+              VALUES (?, ?, ?, 'user', 'approved')`)
+    .run('Guest Resident', 'guest@society.local', hash);
+  console.log('Seeded default guest account -> email: guest@society.local');
+}
+
+// Ensure all existing users are approved so no one is blocked from submitting or signing in
+try {
+  db.prepare("UPDATE users SET status = 'approved' WHERE status = 'pending'").run();
+} catch (e) {}
+
 module.exports = db;

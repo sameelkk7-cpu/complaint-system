@@ -27,22 +27,37 @@ MAX_SECONDS = 30  # analyse at most the first 30 s of a clip
 
 def _decode_with_ffmpeg(path: str) -> np.ndarray:
     """Fallback decoder for formats libsndfile can't read (webm/opus, m4a, some mp3...)."""
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError("Unsupported audio format (install ffmpeg or upload a WAV/MP3/OGG/FLAC file)")
-    proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", path, "-t", str(MAX_SECONDS), "-ac", "1", "-ar", str(TARGET_SR),
-         "-f", "f32le", "-"],
-        capture_output=True, timeout=60,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode("utf-8", "ignore").strip() or "ffmpeg could not decode the file")
-    return np.frombuffer(proc.stdout, dtype=np.float32).copy()
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg = None
+    if ffmpeg:
+        try:
+            proc = subprocess.run(
+                [ffmpeg, "-nostdin", "-v", "error", "-i", path, "-t", str(MAX_SECONDS), "-ac", "1", "-ar", str(TARGET_SR),
+                 "-f", "f32le", "-"],
+                capture_output=True, timeout=60,
+            )
+            if proc.returncode == 0 and len(proc.stdout) > 0:
+                return np.frombuffer(proc.stdout, dtype=np.float32).copy()
+        except Exception:
+            pass
+
+    # High-quality fallback using librosa (always resamples to TARGET_SR mono float32)
+    try:
+        import librosa
+        y, _ = librosa.load(path, sr=TARGET_SR, mono=True, duration=MAX_SECONDS)
+        return y.astype(np.float32)
+    except Exception as exc:
+        raise RuntimeError(f"Could not decode audio: {exc}")
 
 
 def load_audio(file_storage) -> np.ndarray:
     """Load an uploaded clip -> mono float32 at 16 kHz."""
     import soundfile as sf
-    import librosa
 
     ext = os.path.splitext(file_storage.filename or "")[1] or ".wav"
     # mkstemp + close (NamedTemporaryFile can't be reopened on Windows while still open)
@@ -51,20 +66,14 @@ def load_audio(file_storage) -> np.ndarray:
     try:
         file_storage.save(path)
         try:
-            wav, sr = sf.read(path, dtype="float32", always_2d=False)
-            if wav.ndim > 1:
-                wav = np.mean(wav, axis=1)
-            if sr != TARGET_SR:
-                wav = librosa.resample(wav, orig_sr=sr, target_sr=TARGET_SR)
-            if len(wav) > TARGET_SR * MAX_SECONDS:
-                wav = wav[:TARGET_SR * MAX_SECONDS]
-            return wav.astype(np.float32)
+            with sf.SoundFile(path) as source:
+                # Bound memory before decoding; browser recordings already use 16 kHz.
+                if source.samplerate == TARGET_SR:
+                    wav = source.read(frames=TARGET_SR * MAX_SECONDS, dtype="float32", always_2d=True)
+                    return wav.mean(axis=1, dtype=np.float32)
         except Exception:
-            try:
-                wav, _ = librosa.load(path, sr=TARGET_SR, mono=True, duration=MAX_SECONDS)
-                return wav.astype(np.float32)
-            except Exception:
-                return _decode_with_ffmpeg(path)
+            pass
+        return _decode_with_ffmpeg(path)
     finally:
         try:
             os.remove(path)
@@ -81,7 +90,9 @@ def index():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", **yc.model_info()})
+    info = yc.model_info()
+    ready = info["loaded"] and not yc.MOCK_MODE
+    return jsonify({"status": "ok" if ready else "unavailable", **info}), 200 if ready else 503
 
 
 @app.route("/warmup", methods=["GET"])

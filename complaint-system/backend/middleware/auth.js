@@ -41,6 +41,21 @@ function requireAuth(req, res, next) {
   }
 }
 
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : (req.query?.token || null);
+  if (token) {
+    try {
+      req.user = userFromToken(token);
+    } catch (err) {
+      req.user = null;
+    }
+  } else {
+    req.user = null;
+  }
+  next();
+}
+
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
@@ -50,4 +65,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole, signToken, userFromToken };
+module.exports = { requireAuth, optionalAuth, requireRole, signToken, userFromToken };
