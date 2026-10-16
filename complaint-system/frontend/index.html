@@ -10,16 +10,11 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="auth-shell" style="max-width: 620px;">
+<div class="auth-shell" style="max-width: 488px;">
   <div class="panel">
     <div class="brand-mark">
       <strong>Residents' Complaint Desk</strong>
       <span>Noise &amp; nuisance reporting for your residential society</span>
-    </div>
-
-    <div class="nav-tabs" style="margin-bottom: 20px;">
-      <button id="authTabLogin" class="active" type="button" style="flex:1;">Sign in</button>
-      <button id="authTabSubmit" type="button" style="flex:1;">Submit a Complaint (No login needed)</button>
     </div>
 
     <!-- Sign-in view -->
@@ -31,21 +26,81 @@
       </p>
 
       <form id="loginForm" autocomplete="on" novalidate>
-        <label for="email">Email address</label>
+        <label for="email">Email</label>
         <input type="email" id="email" name="email" required autocomplete="username"
                placeholder="resident@example.com">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password">
+        <div class="password-wrap">
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('password', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
         <button type="submit" id="loginBtn" style="width:100%; margin-top:18px;">Sign in</button>
         <p class="error-msg" id="errorMsg" style="display:none;"></p>
       </form>
-      <div class="switch-link">New resident? <a href="register.html">Register an account</a></div>
+      <div class="switch-link"><a href="#" id="showForgotPassword" class="auth-link-button">Forgot your password?</a></div>
+      <div class="switch-link">New here? <a href="register.html">Register an account</a></div>
+      <div class="switch-link auth-alternate-link">
+        <button id="showDirectSubmit" class="auth-link-button" type="button">Submit a complaint without signing in</button>
+      </div>
+    </div>
+
+    <!-- Password Reset Views -->
+    <div id="viewForgotPassword" style="display:none;">
+      <h3>Reset Your Password</h3>
+      <p class="muted" style="font-size:0.88rem;">Enter your registered account email to receive a password reset verification code.</p>
+      <form id="forgotForm">
+        <label for="forgotEmail">Email</label>
+        <input type="email" id="forgotEmail" required placeholder="resident@example.com">
+        <button type="submit" style="width:100%; margin-top:18px;" id="forgotSubmitBtn">Send reset code</button>
+        <p class="error-msg" id="forgotErr" style="display:none;"></p>
+        <p class="success-msg" id="forgotSuccess" style="display:none;"></p>
+      </form>
+      <div class="switch-link"><button id="forgotBackToLogin" class="auth-link-button" type="button">Back to sign in</button></div>
+    </div>
+
+    <div id="viewResetPassword" style="display:none;">
+      <h3>Enter New Password</h3>
+      <p class="muted" style="font-size:0.88rem;">Enter the verification code and set a strong new password.</p>
+      <form id="resetForm">
+        <label for="resetEmail">Email</label>
+        <input type="email" id="resetEmail" required>
+
+        <label for="resetToken">Verification reset code</label>
+        <input type="text" id="resetToken" required placeholder="6-digit reset code">
+
+        <label for="resetNewPassword">New password</label>
+        <div class="password-wrap">
+          <input type="password" id="resetNewPassword" required autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('resetNewPassword', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
+        <div class="password-requirements" id="resetPwReqs">
+          <div class="req-title">Password must contain:</div>
+          <ul>
+            <li class="req-len invalid">Minimum 8 characters</li>
+            <li class="req-upper invalid">At least 1 uppercase letter (A–Z)</li>
+            <li class="req-lower invalid">At least 1 lowercase letter (a–z)</li>
+            <li class="req-num invalid">At least 1 number (0–9)</li>
+            <li class="req-special invalid">At least 1 special character (@, #, $, !, %, etc.)</li>
+          </ul>
+        </div>
+
+        <label for="resetConfirmPassword">Confirm new password</label>
+        <div class="password-wrap">
+          <input type="password" id="resetConfirmPassword" required autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('resetConfirmPassword', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
+
+        <button type="submit" style="width:100%; margin-top:18px;" id="resetSubmitBtn">Update password</button>
+        <p class="error-msg" id="resetErr" style="display:none;"></p>
+        <p class="success-msg" id="resetSuccess" style="display:none;"></p>
+      </form>
+      <div class="switch-link"><button id="resetBackToLogin" class="auth-link-button" type="button">Back to sign in</button></div>
     </div>
 
     <!-- Direct submission view (No permissions / login needed) -->
     <div id="viewDirectSubmit" style="display:none;">
       <h3>Raise a Complaint Directly</h3>
-      <p class="muted" style="font-size:0.88rem;">No login or special permissions needed. Submissions are processed immediately and verified by AI audio analysis.</p>
+      <p class="muted" style="font-size:0.88rem;">No login needed. Audio evidence is mandatory and verified through AI sound analysis.</p>
 
       <form id="publicComplaintForm">
         <label for="pubCategory">Category</label>
@@ -86,11 +141,15 @@
           </div>
         </div>
 
-        <label for="pubAudio">Audio evidence (optional, AI verified)</label>
-        <input type="file" id="pubAudio" accept="audio/*">
+        <label for="pubAudio">Audio evidence <span class="required-star">*</span></label>
+        <div class="mandatory-audio-notice">
+          <span class="badge-mandatory">Required</span> Audio evidence is mandatory to submit a complaint.
+        </div>
+        <input type="file" id="pubAudio" accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.aac" required>
         <div class="rec-box">
           <button type="button" class="secondary" id="pubRecBtn">🎙️ Record with microphone</button>
           <span id="pubRecStatus" class="muted" style="margin-left:8px;"></span>
+          <div id="pubAudioStatusPill" style="display:none;"></div>
           <audio id="pubAudioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
         </div>
 
@@ -98,11 +157,20 @@
         <input type="file" id="pubPhoto" accept="image/*">
         <img id="pubPhotoPreview" class="photo-preview" alt="Photo preview" style="display:none;">
 
-        <button type="submit" style="width:100%; margin-top:18px;" id="pubSubmitBtn">Submit complaint</button>
-        <p class="muted" id="pubAnalyzingMsg" style="display:none;">Uploading evidence and running AI audio verification… please wait.</p>
+        <div class="upload-progress-box" id="pubProgressBox" style="display:none;">
+          <div style="font-weight:600; font-size:0.85rem;" id="pubProgressText">Uploading audio evidence…</div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill indeterminate" id="pubProgressBar"></div>
+          </div>
+          <div class="muted" style="font-size:0.78rem;">Running YAMNet AI audio verification. Please wait…</div>
+        </div>
+
+        <button type="submit" style="width:100%; margin-top:18px;" id="pubSubmitBtn" disabled>Submit complaint</button>
+        <p class="muted" id="pubSubmitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">Audio evidence is mandatory to submit a complaint.</p>
         <p class="error-msg" id="pubErrorMsg" style="display:none;"></p>
         <div id="pubResultBox" style="display:none; margin-top:14px;"></div>
       </form>
+      <div class="switch-link"><button id="showLogin" class="auth-link-button" type="button">Back to sign in</button></div>
     </div>
   </div>
 
@@ -115,26 +183,106 @@
 
 <script src="js/api.js"></script>
 <script>
-  // Tabs
-  const tabLogin = document.getElementById('authTabLogin');
-  const tabSubmit = document.getElementById('authTabSubmit');
   const viewLogin = document.getElementById('viewLogin');
   const viewSubmit = document.getElementById('viewDirectSubmit');
+  const viewForgot = document.getElementById('viewForgotPassword');
+  const viewReset = document.getElementById('viewResetPassword');
 
-  tabLogin.onclick = () => {
-    tabLogin.classList.add('active'); tabSubmit.classList.remove('active');
-    viewLogin.style.display = ''; viewSubmit.style.display = 'none';
-  };
-  tabSubmit.onclick = () => {
-    tabSubmit.classList.add('active'); tabLogin.classList.remove('active');
-    viewLogin.style.display = 'none'; viewSubmit.style.display = '';
-  };
-
-  // If already logged in, show resident dashboard
-  const existing = getUser();
-  if (existing && getToken()) {
-    // Keep user on dashboard if signed in
+  function showView(target) {
+    [viewLogin, viewSubmit, viewForgot, viewReset].forEach(v => v.style.display = 'none');
+    target.style.display = '';
   }
+
+  document.getElementById('showLogin').onclick = () => showView(viewLogin);
+  document.getElementById('showDirectSubmit').onclick = () => showView(viewSubmit);
+  document.getElementById('showForgotPassword').onclick = (e) => {
+    e.preventDefault();
+    showView(viewForgot);
+  };
+  document.getElementById('forgotBackToLogin').onclick = () => showView(viewLogin);
+  document.getElementById('resetBackToLogin').onclick = () => showView(viewLogin);
+
+  // Initialize password checklist on reset password form
+  bindPasswordChecklist('resetNewPassword', 'resetPwReqs');
+
+  // Forgot password form handler
+  document.getElementById('forgotForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = document.getElementById('forgotErr');
+    const succ = document.getElementById('forgotSuccess');
+    const btn = document.getElementById('forgotSubmitBtn');
+    err.style.display = 'none';
+    succ.style.display = 'none';
+
+    const email = document.getElementById('forgotEmail').value.trim();
+    btn.disabled = true;
+    try {
+      const data = await apiFetch('/auth/forgot-password', {
+        method: 'POST',
+        body: { email }
+      });
+      succ.textContent = data.message;
+      succ.style.display = 'block';
+      setTimeout(() => {
+        document.getElementById('resetEmail').value = email;
+        if (data.dev_reset_code) {
+          document.getElementById('resetToken').value = data.dev_reset_code;
+        }
+        showView(viewReset);
+      }, 1000);
+    } catch (error) {
+      err.textContent = error.message;
+      err.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Reset password form handler
+  document.getElementById('resetForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = document.getElementById('resetErr');
+    const succ = document.getElementById('resetSuccess');
+    const btn = document.getElementById('resetSubmitBtn');
+    err.style.display = 'none';
+    succ.style.display = 'none';
+
+    const email = document.getElementById('resetEmail').value.trim();
+    const token = document.getElementById('resetToken').value.trim();
+    const new_password = document.getElementById('resetNewPassword').value;
+    const confirm = document.getElementById('resetConfirmPassword').value;
+
+    const pwErr = validatePassword(new_password);
+    if (pwErr) {
+      err.textContent = pwErr;
+      err.style.display = 'block';
+      return;
+    }
+
+    if (new_password !== confirm) {
+      err.textContent = 'New passwords do not match';
+      err.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const data = await apiFetch('/auth/reset-password', {
+        method: 'POST',
+        body: { email, token, new_password }
+      });
+      succ.textContent = data.message;
+      succ.style.display = 'block';
+      setTimeout(() => {
+        showView(viewLogin);
+      }, 1800);
+    } catch (error) {
+      err.textContent = error.message;
+      err.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // Login handler
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -171,32 +319,110 @@
     if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
   };
 
-  // Mic recording
+  // Mandatory Audio handling & verification validation
   let pubRecordedFile = null, pubRecording = false;
-  const pubRecBtn = document.getElementById('pubRecBtn'), pubRecStatus = document.getElementById('pubRecStatus'), pubPreview = document.getElementById('pubAudioPreview');
-  function setPubPreview(file) { pubPreview.src = URL.createObjectURL(file); pubPreview.style.display = 'block'; }
-  document.getElementById('pubAudio').onchange = e => {
+  const pubRecBtn = document.getElementById('pubRecBtn'), pubRecStatus = document.getElementById('pubRecStatus');
+  const pubPreview = document.getElementById('pubAudioPreview'), pubStatusPill = document.getElementById('pubAudioStatusPill');
+  const pubAudioInput = document.getElementById('pubAudio');
+  const pubSubmitBtn = document.getElementById('pubSubmitBtn');
+  const pubSubmitHint = document.getElementById('pubSubmitHint');
+
+  function updatePubSubmitState() {
+    const hasAudio = !!(pubRecordedFile || (pubAudioInput.files && pubAudioInput.files[0]));
+    pubSubmitBtn.disabled = !hasAudio;
+    pubSubmitHint.style.display = hasAudio ? 'none' : 'block';
+  }
+
+  function validatePubAudio(file) {
+    if (!file) {
+      pubStatusPill.style.display = 'none';
+      updatePubSubmitState();
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      pubStatusPill.className = 'audio-status-pill error';
+      pubStatusPill.innerHTML = '⚠️ File exceeds 25MB maximum limit';
+      pubStatusPill.style.display = 'inline-flex';
+      pubAudioInput.value = '';
+      pubRecordedFile = null;
+      pubPreview.style.display = 'none';
+      updatePubSubmitState();
+      return;
+    }
+    if (file.size < 100) {
+      pubStatusPill.className = 'audio-status-pill error';
+      pubStatusPill.innerHTML = '⚠️ Audio file is empty or corrupted';
+      pubStatusPill.style.display = 'inline-flex';
+      pubAudioInput.value = '';
+      pubRecordedFile = null;
+      pubPreview.style.display = 'none';
+      updatePubSubmitState();
+      return;
+    }
+
+    const testAudio = new Audio();
+    const url = URL.createObjectURL(file);
+    testAudio.src = url;
+    testAudio.onloadedmetadata = () => {
+      if (testAudio.duration && testAudio.duration < 1.0) {
+        pubStatusPill.className = 'audio-status-pill error';
+        pubStatusPill.innerHTML = `⚠️ Audio recording too short (${testAudio.duration.toFixed(1)}s, min 1s required)`;
+        pubStatusPill.style.display = 'inline-flex';
+        pubAudioInput.value = '';
+        pubRecordedFile = null;
+        pubPreview.style.display = 'none';
+        updatePubSubmitState();
+      } else {
+        const durStr = testAudio.duration ? ` · ${testAudio.duration.toFixed(1)}s` : '';
+        pubStatusPill.className = 'audio-status-pill valid';
+        pubStatusPill.innerHTML = `✓ Audio ready${durStr} (${Math.round(file.size / 1024)} KB)`;
+        pubStatusPill.style.display = 'inline-flex';
+        pubPreview.src = url;
+        pubPreview.style.display = 'block';
+        updatePubSubmitState();
+      }
+    };
+    testAudio.onerror = () => {
+      // In case browser decoder does not support container metadata directly
+      pubStatusPill.className = 'audio-status-pill valid';
+      pubStatusPill.innerHTML = `✓ Audio attached (${Math.round(file.size / 1024)} KB)`;
+      pubStatusPill.style.display = 'inline-flex';
+      pubPreview.src = url;
+      pubPreview.style.display = 'block';
+      updatePubSubmitState();
+    };
+  }
+
+  pubAudioInput.onchange = e => {
     pubRecordedFile = null;
-    if (e.target.files[0]) setPubPreview(e.target.files[0]); else pubPreview.style.display = 'none';
+    validatePubAudio(e.target.files[0]);
   };
+
   pubRecBtn.onclick = async () => {
     try {
       if (!pubRecording) {
+        pubRecordedFile = null;
+        updatePubSubmitState();
         await AudioRecorder.start(sec => {
-          pubRecStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s`;
+          pubRecStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s (min 2s)`;
           if (sec >= 15) pubRecBtn.click();
         });
-        pubRecording = true; pubRecBtn.textContent = '⏹ Stop recording';
+        pubRecording = true;
+        pubRecBtn.textContent = '⏹ Stop recording';
       } else {
-        pubRecording = false; pubRecBtn.textContent = '🎙️ Record with microphone'; pubRecStatus.textContent = 'Processing…';
+        pubRecording = false;
+        pubRecBtn.textContent = '🎙️ Record with microphone';
+        pubRecStatus.textContent = 'Processing clip…';
         pubRecordedFile = await AudioRecorder.stop();
-        document.getElementById('pubAudio').value = '';
-        setPubPreview(pubRecordedFile);
-        pubRecStatus.textContent = 'Recording ready — it will be attached.';
+        pubAudioInput.value = '';
+        validatePubAudio(pubRecordedFile);
+        pubRecStatus.textContent = 'Microphone recording complete.';
       }
     } catch (err) {
-      pubRecording = false; pubRecBtn.textContent = '🎙️ Record with microphone';
+      pubRecording = false;
+      pubRecBtn.textContent = '🎙️ Record with microphone';
       pubRecStatus.textContent = 'Microphone unavailable: ' + err.message;
+      updatePubSubmitState();
     }
   };
 
@@ -204,8 +430,20 @@
   document.getElementById('publicComplaintForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errorMsg = document.getElementById('pubErrorMsg'), resultBox = document.getElementById('pubResultBox');
-    const analyzingMsg = document.getElementById('pubAnalyzingMsg'), submitBtn = document.getElementById('pubSubmitBtn');
-    errorMsg.style.display = 'none'; resultBox.style.display = 'none';
+    const submitBtn = document.getElementById('pubSubmitBtn');
+    const progressBox = document.getElementById('pubProgressBox');
+    const progressText = document.getElementById('pubProgressText');
+
+    errorMsg.style.display = 'none';
+    resultBox.style.display = 'none';
+
+    const audioFile = pubRecordedFile || (pubAudioInput.files && pubAudioInput.files[0]);
+    if (!audioFile) {
+      errorMsg.textContent = 'Audio evidence is mandatory to submit a complaint. Please record or attach an audio file.';
+      errorMsg.style.display = 'block';
+      updatePubSubmitState();
+      return;
+    }
 
     const form = new FormData();
     form.append('category', pubCategorySel.value);
@@ -215,32 +453,40 @@
     form.append('description', document.getElementById('pubDescription').value);
     form.append('incident_datetime', document.getElementById('pubDatetime').value);
     form.append('against_unit', document.getElementById('pubAgainstUnit').value);
+    form.append('audio', audioFile);
 
-    const audioFile = pubRecordedFile || document.getElementById('pubAudio').files[0];
     const photoFile = document.getElementById('pubPhoto').files[0];
-    if (audioFile) form.append('audio', audioFile);
     if (photoFile) form.append('photo', photoFile);
 
     submitBtn.disabled = true;
-    if (audioFile) analyzingMsg.style.display = 'block';
+    progressBox.style.display = 'block';
+    progressText.textContent = 'Uploading evidence & verifying audio with AI…';
+
     try {
       const c = await apiFetch('/complaints', { method: 'POST', isForm: true, body: form });
       let html = `<strong style="font-size:1.05rem;">✅ Complaint #${c.id} successfully submitted!</strong>`;
-      html += `<p style="margin:6px 0;">Status: <strong>${esc(c.status)}</strong> — Your complaint is queued for resolution.</p>`;
+      html += `<p style="margin:6px 0;">Status: <strong>${esc(c.status)}</strong> — Verification: ${verdictTag(c.ai_verdict)}</p>`;
       if (c.has_audio) {
         html += '<br>' + aiReportHtml(c).replace(/^<div class="ai-box/, '<div style="margin-top:8px" class="ai-box');
       }
       if (c.has_photo) html += '<p class="muted" style="margin:8px 0 0;">📷 Photo evidence attached.</p>';
       resultBox.innerHTML = `<div class="ai-box">${html}</div>`;
       resultBox.style.display = 'block';
+
       document.getElementById('publicComplaintForm').reset();
-      pubRecordedFile = null; pubPreview.style.display = 'none'; pubRecStatus.textContent = '';
-      document.getElementById('pubPhotoPreview').style.display = 'none'; syncNoise();
+      pubRecordedFile = null;
+      pubPreview.style.display = 'none';
+      pubStatusPill.style.display = 'none';
+      pubRecStatus.textContent = '';
+      document.getElementById('pubPhotoPreview').style.display = 'none';
+      syncNoise();
+      updatePubSubmitState();
     } catch (err) {
       errorMsg.textContent = err.message;
       errorMsg.style.display = 'block';
+      updatePubSubmitState();
     } finally {
-      submitBtn.disabled = false; analyzingMsg.style.display = 'none';
+      progressBox.style.display = 'none';
     }
   });
 </script>

@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS announcements (
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
 
 // ---- Lightweight migrations (safe to run on an existing database) ----

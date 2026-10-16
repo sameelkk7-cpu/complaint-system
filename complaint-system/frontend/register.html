@@ -29,7 +29,20 @@
       <input type="email" id="email" required>
 
       <label for="password">Password</label>
-      <input type="password" id="password" minlength="6" required>
+      <div class="password-wrap">
+        <input type="password" id="password" required autocomplete="new-password">
+        <button type="button" class="password-toggle-btn" id="regPwToggle" onclick="togglePassword('password', this)" title="Show password" aria-label="Show password">👁️</button>
+      </div>
+      <div class="password-requirements" id="regPwReqs">
+        <div class="req-title">Password must contain:</div>
+        <ul>
+          <li class="req-len invalid">Minimum 8 characters</li>
+          <li class="req-upper invalid">At least 1 uppercase letter (A–Z)</li>
+          <li class="req-lower invalid">At least 1 lowercase letter (a–z)</li>
+          <li class="req-num invalid">At least 1 number (0–9)</li>
+          <li class="req-special invalid">At least 1 special character (@, #, $, !, %, etc.)</li>
+        </ul>
+      </div>
 
       <label for="role">I am registering as</label>
       <select id="role">
@@ -64,19 +77,30 @@
 
 <script src="js/api.js"></script>
 <script>
+  bindPasswordChecklist('password', 'regPwReqs');
+
   document.getElementById('regForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errorMsg = document.getElementById('errorMsg');
     const successMsg = document.getElementById('successMsg');
     errorMsg.style.display = 'none';
     successMsg.style.display = 'none';
+
+    const password = document.getElementById('password').value;
+    const pwErr = validatePassword(password);
+    if (pwErr) {
+      errorMsg.textContent = pwErr;
+      errorMsg.style.display = 'block';
+      return;
+    }
+
     try {
       const data = await apiFetch('/auth/register', {
         method: 'POST',
         body: {
           name: document.getElementById('name').value.trim(),
           email: document.getElementById('email').value.trim(),
-          password: document.getElementById('password').value,
+          password,
           role: document.getElementById('role').value,
           flat_number: document.getElementById('flat').value.trim(),
           block: document.getElementById('block').value.trim()
@@ -85,6 +109,7 @@
       successMsg.textContent = data.message;
       successMsg.style.display = 'block';
       document.getElementById('regForm').reset();
+      bindPasswordChecklist('password', 'regPwReqs');
     } catch (err) {
       errorMsg.textContent = err.message;
       errorMsg.style.display = 'block';

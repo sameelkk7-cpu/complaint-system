@@ -25,13 +25,27 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
   }
 });
+const validAudioExts = ['.wav', '.mp3', '.ogg', '.webm', '.m4a', '.aac', '.flac', '.mp4'];
+
 const fileFilter = (req, file, cb) => {
-  const ok = (file.fieldname === 'audio' && /^(audio|video)\//.test(file.mimetype)) ||   // browsers label webm recordings video/webm
-             (file.fieldname === 'photo' && /^image\//.test(file.mimetype));
-  if (!ok) return cb(new Error(`Invalid ${file.fieldname} file type (${file.mimetype})`));
-  cb(null, true);
+  if (file.fieldname === 'audio') {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const isAudioMime = /^(audio\/|video\/webm)/.test(file.mimetype);
+    const isValidExt = validAudioExts.includes(ext);
+    if (!isAudioMime && !isValidExt) {
+      return cb(new Error(`Invalid audio file format (${file.mimetype}). Supported formats: WAV, MP3, WEBM, OGG, M4A, AAC`));
+    }
+    return cb(null, true);
+  }
+  if (file.fieldname === 'photo') {
+    if (!/^image\//.test(file.mimetype)) {
+      return cb(new Error(`Invalid photo file format (${file.mimetype})`));
+    }
+    return cb(null, true);
+  }
+  cb(new Error(`Invalid field: ${file.fieldname}`));
 };
-const upload = multer({ storage, fileFilter, limits: { fileSize: 15 * 1024 * 1024 } });
+const upload = multer({ storage, fileFilter, limits: { fileSize: 25 * 1024 * 1024 } });
 const uploadFields = upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'photo', maxCount: 1 }]);
 
 function logAction(complaintId, actorId, action, details) {
@@ -56,83 +70,37 @@ function getAiAnalyzeUrl() {
   return url;
 }
 
-// Built-in audio analyzer: calculates RMS loudness (dBFS) and verifies acoustic presence
-function builtinAnalyzeAudio(filePath, claimedType) {
+function validateAudioFile(filePath) {
   try {
-    const buf = fs.readFileSync(filePath);
-    let rms = 0;
+    const stat = fs.statSync(filePath);
+    if (stat.size < 100) {
+      return 'Audio evidence is empty or corrupted (minimum size required).';
+    }
+    if (stat.size > 25 * 1024 * 1024) {
+      return 'Audio file exceeds maximum size limit (25MB).';
+    }
 
-    if (buf.length > 44 && buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WAVE') {
-      let pos = 12;
-      while (pos < buf.length - 8) {
-        const id = buf.slice(pos, pos + 4).toString();
-        const len = buf.readUInt32LE(pos + 4);
-        if (id === 'data') {
-          const samples = Math.min(Math.floor(len / 2), 16000 * 30);
-          let sumSq = 0;
-          for (let i = 0; i < samples; i++) {
-            if (pos + 8 + i * 2 + 1 >= buf.length) break;
-            const val = buf.readInt16LE(pos + 8 + i * 2) / 32768.0;
-            sumSq += val * val;
-          }
-          rms = samples ? Math.sqrt(sumSq / samples) : 0;
-          break;
+    // Parse WAV header if available to validate recording duration
+    const fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(44);
+    fs.readSync(fd, header, 0, 44, 0);
+    fs.closeSync(fd);
+
+    if (header.slice(0, 4).toString() === 'RIFF' && header.slice(8, 12).toString() === 'WAVE') {
+      const byteRate = header.readUInt32LE(28);
+      if (byteRate > 0) {
+        const durationSec = (stat.size - 44) / byteRate;
+        if (durationSec < 1.0) {
+          return `Audio recording is too short (${durationSec.toFixed(1)}s). Minimum recording duration is 1 second.`;
         }
-        pos += 8 + len;
+        if (durationSec > 120.0) {
+          return `Audio recording exceeds maximum duration (${durationSec.toFixed(1)}s > 120s).`;
+        }
       }
-    } else {
-      const maxLen = Math.min(buf.length, 100000);
-      let sumSq = 0;
-      for (let i = 0; i < maxLen; i++) {
-        const val = (buf[i] - 128) / 128.0;
-        sumSq += val * val;
-      }
-      rms = maxLen ? Math.sqrt(sumSq / maxLen) : 0;
     }
-
-    const db = 20 * Math.log10(Math.max(rms, 1e-6));
-    const noiseLevel = rms < 0.02 ? 'LOW' : (rms < 0.08 ? 'MEDIUM' : 'HIGH');
-
-    if (rms < 0.005) {
-      return {
-        top_category: 'Silence',
-        confidence: 0.85,
-        noise_level: 'LOW',
-        noise_db_relative: Math.round(db * 10) / 10,
-        active_fraction: 0.0,
-        top_predictions: [{ label: 'Silence', score: 0.85 }],
-        category_scores: { Silence: 0.85 },
-        builtin: true
-      };
-    }
-
-    const detected = (claimedType && claimedType !== 'Other') ? claimedType : 'Noise Disturbance';
-    const conf = Math.min(0.95, Math.max(0.68, Math.round((0.65 + rms * 2) * 100) / 100));
-
-    return {
-      top_category: detected,
-      confidence: conf,
-      noise_level: noiseLevel,
-      noise_db_relative: Math.round(db * 10) / 10,
-      active_fraction: 0.90,
-      top_predictions: [
-        { label: detected, score: conf },
-        { label: 'Ambient Noise', score: 0.15 }
-      ],
-      category_scores: { [detected]: conf },
-      builtin: true
-    };
+    return null;
   } catch (err) {
-    return {
-      top_category: claimedType || 'Noise Disturbance',
-      confidence: 0.75,
-      noise_level: 'MEDIUM',
-      noise_db_relative: -24.0,
-      active_fraction: 0.85,
-      top_predictions: [{ label: claimedType || 'Noise Disturbance', score: 0.75 }],
-      category_scores: {},
-      builtin: true
-    };
+    return null;
   }
 }
 
@@ -164,34 +132,48 @@ async function sendToAiUrl(url, filePath, timeoutMs = 15000) {
   return body;
 }
 
-async function analyzeAudio(filePath, claimedType) {
+// Calls real YAMNet AI service; never invents dummy results or claims verified if service is down
+async function analyzeAudio(filePath) {
   const localUrl = (process.env.AI_SERVICE_URL && !process.env.AI_SERVICE_URL.includes('onrender.com'))
     ? process.env.AI_SERVICE_URL
     : 'http://127.0.0.1:5001/analyze';
   const remoteUrl = 'https://complaint-system-ai-kxn8.onrender.com/analyze';
 
-  // 1. Try local AI service
+  // 1. Try local AI service (quick timeout)
   try {
-    return await sendToAiUrl(localUrl, filePath, 6000);
+    return await sendToAiUrl(localUrl, filePath, 8000);
   } catch (errLocal) {
     // 2. Try remote Render AI service
     try {
       return await sendToAiUrl(remoteUrl, filePath, 25000);
     } catch (errRemote) {
-      // 3. Fallback to built-in audio analyzer (never fails with 'Unavailable')
-      console.warn(`[AI] External endpoints unavailable (local: ${errLocal.message}, remote: ${errRemote.message}). Using built-in audio verification.`);
-      return builtinAnalyzeAudio(filePath, claimedType);
+      console.warn(`[AI] Verification service unreachable (local: ${errLocal.message}, remote: ${errRemote.message})`);
+      throw new Error(`AI verification service unavailable (${errLocal.message || errRemote.message})`);
     }
   }
 }
 
-// Decide whether the audio supports the complaint.
+/**
+ * Maps AI classification into one of the 4 verification states:
+ * - Pending: awaiting processing
+ * - Verified: audio confirmed and matches complaint
+ * - Rejected: audio is silent, insufficient confidence, or mismatched sound
+ * - Verification Failed: AI service error, timeout, or unreachable
+ */
 function verdictFor(claimedType, ai) {
-  if (!ai || !ai.top_category || typeof ai.confidence !== 'number') return 'Inconclusive';
-  if (ai.top_category === 'Silence') return 'Inconclusive';
-  if (ai.confidence < MIN_CONF) return 'Inconclusive';
-  if (claimedType && claimedType !== 'Other' && ai.top_category !== claimedType && ai.top_category !== 'Noise Disturbance') {
-    return 'Mismatch';
+  if (!ai || !ai.top_category || typeof ai.confidence !== 'number') {
+    return 'Verification Failed';
+  }
+  if (ai.top_category === 'Silence') {
+    return 'Rejected';
+  }
+  if (ai.confidence < MIN_CONF) {
+    return 'Rejected';
+  }
+  if (claimedType && claimedType !== 'Other') {
+    if (ai.top_category !== claimedType && ai.top_category !== 'Noise Disturbance') {
+      return 'Rejected';
+    }
   }
   return 'Verified';
 }
@@ -203,7 +185,7 @@ function parseDetails(c) {
   return { ...c, ai_details, has_photo: !!c.photo_path, has_audio: !!c.audio_path };
 }
 
-// ---------- Submit a complaint (No permissions or role restrictions required) ----------
+// ---------- Submit a complaint (Mandatory Audio Evidence) ----------
 router.post('/', optionalAuth, (req, res) => {
   uploadFields(req, res, async (uploadErr) => {
     if (uploadErr) return res.status(400).json({ error: uploadErr.message });
@@ -213,23 +195,47 @@ router.post('/', optionalAuth, (req, res) => {
     const photoFile = req.files?.photo?.[0];
     const cleanup = () => [audioFile, photoFile].forEach(f => f && fs.unlink(f.path, () => {}));
 
+    // Server-side mandatory audio evidence validation
+    if (!audioFile) {
+      cleanup();
+      return res.status(400).json({
+        error: 'Audio evidence is mandatory to submit a complaint. Please record or upload an audio file.'
+      });
+    }
+
+    // Server-side audio format, size, and duration validation
+    const audioValidationErr = validateAudioFile(audioFile.path);
+    if (audioValidationErr) {
+      cleanup();
+      return res.status(400).json({ error: audioValidationErr });
+    }
+
     if (!category || !description || !description.trim()) {
       cleanup();
       return res.status(400).json({ error: 'category and description are required' });
     }
 
-    let ai = null, ai_verdict = null;
+    let ai = null;
+    let ai_verdict = 'Pending';
     let status = 'Pending';
 
-    if (audioFile) {
-      try {
-        ai = await analyzeAudio(audioFile.path, claimed_noise_type);
-        ai_verdict = verdictFor(claimed_noise_type, ai);
-      } catch (err) {
-        console.warn('Audio analysis fallback:', err.message);
-        ai = builtinAnalyzeAudio(audioFile.path, claimed_noise_type);
-        ai_verdict = verdictFor(claimed_noise_type, ai);
-      }
+    // Every complaint passes through the audio verification workflow
+    try {
+      ai = await analyzeAudio(audioFile.path);
+      ai_verdict = verdictFor(claimed_noise_type, ai);
+    } catch (err) {
+      console.warn('[AI] Verification failed or AI service unavailable:', err.message);
+      // Safely handle failures without inventing fake results
+      ai_verdict = 'Verification Failed';
+      ai = null;
+    }
+
+    // If verification is not successful, do not mark as verified.
+    // Complaints that are not Verified are held as 'Unverified' for admin review and retry.
+    if (ai_verdict === 'Verified') {
+      status = 'Pending';
+    } else {
+      status = 'Unverified';
     }
 
     // Determine acting user ID (logged-in user of ANY role, or guest resident)
@@ -254,21 +260,81 @@ router.post('/', optionalAuth, (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       actorUserId, category, description.trim(), incident_datetime || null,
-      photoFile ? photoFile.filename : null, audioFile ? audioFile.filename : null,
+      photoFile ? photoFile.filename : null, audioFile.filename,
       ai ? ai.top_category : null, ai ? ai.confidence : null, ai ? ai.noise_level : null,
       status, blockOf(unit), unit, claimed_noise_type || null, ai_verdict,
       ai ? JSON.stringify({
         top_predictions: ai.top_predictions, category_scores: ai.category_scores,
-        noise_db_relative: ai.noise_db_relative, active_fraction: ai.active_fraction, mock: !!ai.mock,
-        builtin: !!ai.builtin
+        noise_db_relative: ai.noise_db_relative, active_fraction: ai.active_fraction, mock: !!ai.mock
       }) : null
     );
 
     logAction(info.lastInsertRowid, actorUserId, 'COMPLAINT_SUBMITTED',
-      `category=${category}, status=${status}${ai_verdict ? `, ai_verdict=${ai_verdict}` : ''}${photoFile ? ', photo' : ''}${audioFile ? ', audio' : ''}`);
+      `category=${category}, status=${status}, ai_verdict=${ai_verdict}${photoFile ? ', photo' : ''}, audio=mandatory`);
 
     res.status(201).json(parseDetails(db.prepare('SELECT * FROM complaints WHERE id = ?').get(info.lastInsertRowid)));
   });
+});
+
+// Re-run AI audio verification (Retry Verification option for temporary errors or manual retry)
+router.post('/:id/reanalyze', optionalAuth, async (req, res) => {
+  const c = db.prepare('SELECT * FROM complaints WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Complaint not found' });
+  if (!c.audio_path) return res.status(400).json({ error: 'No audio evidence attached to this complaint' });
+
+  // Authorization: owner of complaint or admin
+  if (req.user && req.user.role !== 'admin' && req.user.id !== c.user_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const audioFilePath = path.join(UPLOAD_ROOT, 'audio', path.basename(c.audio_path));
+  if (!fs.existsSync(audioFilePath)) {
+    return res.status(404).json({ error: 'Audio file missing on server' });
+  }
+
+  let ai = null;
+  let ai_verdict = 'Verification Failed';
+  try {
+    ai = await analyzeAudio(audioFilePath);
+    ai_verdict = verdictFor(c.claimed_noise_type, ai);
+  } catch (err) {
+    console.warn(`[AI reanalyze] Verification failed: ${err.message}`);
+    ai_verdict = 'Verification Failed';
+  }
+
+  db.prepare(`
+    UPDATE complaints
+    SET ai_category = ?, ai_confidence = ?, noise_level = ?, ai_verdict = ?, ai_details = ?,
+        status = CASE WHEN ? = 'Verified' AND status = 'Unverified' THEN 'Pending' ELSE status END,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    ai ? ai.top_category : null,
+    ai ? ai.confidence : null,
+    ai ? ai.noise_level : null,
+    ai_verdict,
+    ai ? JSON.stringify({
+      top_predictions: ai.top_predictions,
+      category_scores: ai.category_scores,
+      noise_db_relative: ai.noise_db_relative,
+      active_fraction: ai.active_fraction,
+      mock: !!ai.mock
+    }) : null,
+    ai_verdict,
+    c.id
+  );
+
+  logAction(c.id, req.user ? req.user.id : c.user_id, 'AI_REANALYZED',
+    `ai_verdict=${ai_verdict}${ai ? `, top_category=${ai.top_category}` : ''}`);
+
+  if (ai_verdict === 'Verification Failed') {
+    return res.status(502).json({
+      error: 'AI verification service is currently unavailable. Please try again in a few moments.',
+      complaint: parseDetails(db.prepare('SELECT * FROM complaints WHERE id = ?').get(c.id))
+    });
+  }
+
+  res.json(parseDetails(db.prepare('SELECT * FROM complaints WHERE id = ?').get(c.id)));
 });
 
 // ---------- Own complaints (Any authenticated user can view their complaints) ----------

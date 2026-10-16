@@ -234,6 +234,18 @@ tr:last-child td { border-bottom: none; }
   color: var(--ink-soft);
 }
 .switch-link { text-align: center; margin-top: 16px; font-size: 0.88rem; }
+.auth-alternate-link { margin-top: 8px; }
+.auth-link-button {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  text-decoration: underline;
+}
+.auth-link-button:hover { opacity: 0.8; }
 
 /* ---- Auth-page operator identification (Safe Browsing compliance) ---- */
 .site-notice {
@@ -262,7 +274,9 @@ tr:last-child td { border-bottom: none; }
 
 /* ===== Additions: evidence, dialogs, announcements, charts ===== */
 .tag-verified { background: var(--accent-soft); color: var(--accent); }
+.tag-rejected { background: var(--danger-soft); color: var(--danger); }
 .tag-mismatch { background: var(--danger-soft); color: var(--danger); }
+.tag-verification-failed { background: var(--clay-soft); color: var(--clay); font-weight: 600; }
 .tag-inconclusive, .tag-unavailable { background: var(--clay-soft); color: var(--clay); }
 .badge { display:inline-block; min-width:18px; padding:1px 6px; margin-left:6px; border-radius:10px; background:var(--clay); color:#fff; font-size:0.7rem; font-weight:700; text-align:center; }
 .row-link { cursor:pointer; color: var(--accent); text-decoration: underline; background:none; border:none; padding:0; font-weight:600; }
@@ -297,4 +311,155 @@ dialog::backdrop { background: rgba(20,30,26,.55); }
 .rec-dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--danger); margin-right:6px; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity:.2; } }
 .photo-preview { max-width:180px; max-height:140px; margin-top:8px; border:1px solid var(--line); border-radius:3px; display:none; }
+
+/* ---- Strong Password Components ---- */
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-wrap input {
+  padding-right: 42px;
+}
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none !important;
+  border: none !important;
+  color: var(--ink-soft) !important;
+  cursor: pointer;
+  padding: 6px 8px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.password-toggle-btn:hover {
+  opacity: 0.75;
+}
+.password-requirements {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  border-left: 3px solid var(--accent);
+}
+.password-requirements .req-title {
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.password-requirements ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.password-requirements li {
+  margin: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+.password-requirements li.valid {
+  color: var(--accent);
+  font-weight: 600;
+}
+.password-requirements li.valid::before {
+  content: "✓";
+  color: var(--accent);
+  font-weight: bold;
+}
+.password-requirements li.invalid {
+  color: var(--ink-soft);
+}
+.password-requirements li.invalid::before {
+  content: "○";
+  color: var(--line);
+}
+
+/* ---- Mandatory Audio Evidence Notice & Progress ---- */
+.mandatory-audio-notice {
+  font-size: 0.82rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin: 6px 0 10px;
+  border-left: 3px solid var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.badge-mandatory {
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.required-star {
+  color: var(--danger);
+  font-weight: bold;
+}
+.audio-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  padding: 3px 8px;
+  border-radius: 12px;
+  margin-top: 6px;
+}
+.audio-status-pill.valid {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.audio-status-pill.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.upload-progress-box {
+  background: #f8faf9;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-top: 14px;
+}
+.progress-bar-wrap {
+  width: 100%;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0 4px;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.3s ease;
+}
+.progress-bar-fill.indeterminate {
+  width: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, #689f92 50%, var(--accent) 100%);
+  background-size: 200% 100%;
+  animation: progressPulse 1.5s infinite linear;
+}
+@keyframes progressPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @media (max-width:640px){ .kv{grid-template-columns:1fr;} }

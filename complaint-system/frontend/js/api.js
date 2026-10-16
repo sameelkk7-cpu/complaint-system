@@ -89,14 +89,26 @@ function esc(v) {
 }
 const pct = x => `${Math.round((x || 0) * 100)}%`;
 
-// ---------- AI verdict helpers ----------
+// ---------- AI verdict helpers (Pending, Verified, Rejected, Verification Failed) ----------
 function verdictTag(v) {
   if (!v) return '—';
-  const label = { Verified: 'AI verified', Mismatch: 'Sound mismatch', Inconclusive: 'Inconclusive', Unavailable: 'AI unavailable' }[v] || v;
-  return `<span class="tag tag-${esc(v.toLowerCase())}">${label}</span>`;
+  const norm = String(v).trim();
+  if (norm === 'Verified') {
+    return `<span class="tag tag-verified">Verified</span>`;
+  }
+  if (norm === 'Rejected' || norm === 'Mismatch') {
+    return `<span class="tag tag-rejected">Rejected</span>`;
+  }
+  if (norm === 'Verification Failed' || norm === 'Unavailable' || norm === 'Inconclusive') {
+    return `<span class="tag tag-verification-failed">Verification Failed</span>`;
+  }
+  if (norm === 'Pending') {
+    return `<span class="tag tag-pending">Pending</span>`;
+  }
+  return `<span class="tag">${esc(norm)}</span>`;
 }
 function aiSummary(c) {
-  return c.ai_category ? `${esc(c.ai_category)} (${pct(c.ai_confidence)})` : '—';
+  return c.ai_category ? `${esc(c.ai_category)} (${pct(c.ai_confidence)})` : (c.ai_verdict === 'Verification Failed' ? 'Service Unavailable' : '—');
 }
 
 // ---------- Evidence (photo / audio) - fetched through the authenticated endpoint ----------
@@ -122,31 +134,56 @@ function evidenceHtml(c) {
            style="display:none; padding:8px 14px; background:var(--accent-soft); color:var(--accent); border-radius:3px; font-size:0.88rem;"
            >📷 Open photo in new tab</a>
       </div>` : ''}
-    ${c.has_audio ? `<div><div class="muted">Audio evidence</div>
+    ${c.has_audio ? `<div><div class="muted">Audio evidence (Mandatory)</div>
         <audio controls preload="none" src="${audioUrl}"></audio></div>` : ''}
   </div>`;
 }
 
 function aiReportHtml(c) {
-  if (!c.has_audio) return '';
-  if (!c.ai_category) {
-    return `<div class="ai-box bad"><strong>AI verification unavailable.</strong> The audio could not be analysed, so this complaint needs manual review.</div>`;
+  if (!c.has_audio) {
+    return `<div class="ai-box bad"><strong>Missing Audio Evidence:</strong> Audio verification is mandatory to submit a complaint.</div>`;
   }
+
   const d = c.ai_details || {};
-  const cls = c.ai_verdict === 'Verified' ? '' : (c.ai_verdict === 'Mismatch' ? 'bad' : 'warn');
+  const isFailed = c.ai_verdict === 'Verification Failed' || c.ai_verdict === 'Unavailable' || (!c.ai_category && c.ai_verdict !== 'Verified');
+  const isRejected = c.ai_verdict === 'Rejected' || c.ai_verdict === 'Mismatch' || (c.ai_category === 'Silence');
+  const isVerified = c.ai_verdict === 'Verified';
+
+  let cls = isVerified ? '' : (isRejected ? 'bad' : 'warn');
+  let verdictState = isVerified ? 'Verified' : (isRejected ? 'Rejected' : (isFailed ? 'Verification Failed' : 'Pending'));
+
+  let verdictText = '';
+  if (isVerified) {
+    verdictText = 'Audio evidence confirmed. The recording matches and supports the reported complaint.';
+  } else if (isRejected) {
+    if (c.ai_category === 'Silence') {
+      verdictText = 'The uploaded audio clip was silent or contained no acoustic activity.';
+    } else if (c.claimed_noise_type && c.ai_category && c.claimed_noise_type !== c.ai_category) {
+      verdictText = `The audio was detected as <strong>${esc(c.ai_category)}</strong>, which does not match reported <strong>${esc(c.claimed_noise_type)}</strong>.`;
+    } else {
+      verdictText = 'Audio evidence did not meet verification criteria.';
+    }
+  } else if (isFailed) {
+    verdictText = 'AI audio verification service is currently unavailable or encountered an error. Audio evidence is preserved for administrator review.';
+  } else {
+    verdictText = 'Audio verification is currently pending.';
+  }
+
+  const retryButtonHtml = `<div style="margin-top:10px;">
+    <button class="secondary" id="retryVerifBtn-${c.id}" onclick="retryVerification(${c.id})">🔄 Retry Verification</button>
+    <span id="retryVerifStatus-${c.id}" class="muted" style="margin-left:8px;"></span>
+  </div>`;
+
   const bars = (d.top_predictions || []).map(p =>
     `<div class="bar-row"><span class="lbl">${esc(p.label)}</span><span class="bar" style="width:${Math.max(2, Math.round(p.score * 180))}px"></span><span class="val">${pct(p.score)}</span></div>`).join('');
-  const verdictText = {
-    Verified: 'The audio supports this complaint.',
-    Mismatch: `The recording sounds like <strong>${esc(c.ai_category)}</strong>, but the resident reported <strong>${esc(c.claimed_noise_type)}</strong>.`,
-    Inconclusive: 'The audio was silent or the AI was not confident enough — please review manually.',
-  }[c.ai_verdict] || '';
+
   return `<div class="ai-box ${cls}">
-    <div><strong>AI audio verification (YAMNet)</strong> ${verdictTag(c.ai_verdict)}${d.mock ? ' <span class="tag tag-rejected">MOCK MODE</span>' : ''}</div>
+    <div><strong>AI Audio Verification (YAMNet)</strong> ${verdictTag(verdictState)}${d.mock ? ' <span class="tag tag-rejected">MOCK MODE</span>' : ''}</div>
     <div style="margin:6px 0;">${verdictText}</div>
-    <div>Detected: <strong>${esc(c.ai_category)}</strong> · confidence <strong>${pct(c.ai_confidence)}</strong> ·
-         loudness <span class="noise-${esc(c.noise_level)}">${esc(c.noise_level)}</span>${d.noise_db_relative != null ? ` (${d.noise_db_relative} dBFS, relative)` : ''}</div>
+    ${c.ai_category && c.ai_confidence ? `<div>Detected: <strong>${esc(c.ai_category)}</strong> · confidence <strong>${pct(c.ai_confidence)}</strong> ·
+         loudness <span class="noise-${esc(c.noise_level)}">${esc(c.noise_level)}</span>${d.noise_db_relative != null ? ` (${d.noise_db_relative} dBFS, relative)` : ''}</div>` : ''}
     ${bars ? `<div style="margin-top:8px;"><div class="muted">Strongest sounds heard</div>${bars}</div>` : ''}
+    ${isFailed ? retryButtonHtml : ''}
   </div>`;
 }
 
@@ -163,8 +200,6 @@ async function openComplaintDetail(id, extraHtml = '') {
   dlg.showModal();
   const body = dlg.querySelector('.dlg-body');
   try {
-    // Use the admin endpoint when available (gives richer data: resident email, assigned name);
-    // fall back to the user-facing endpoint for other roles.
     const currentUser = getUser();
     const complaintEndpoint = (currentUser && currentUser.role === 'admin')
       ? `/admin/complaints/${id}`
@@ -174,7 +209,7 @@ async function openComplaintDetail(id, extraHtml = '') {
       apiFetch(`/complaints/${id}/timeline`)
     ]);
     const actionLabel = { COMPLAINT_SUBMITTED: 'Complaint submitted', STATUS_CHANGED: 'Status changed', ASSIGNED: 'Assigned', FLAGGED_REVIEW: 'Admin reviewed flagged complaint',
-      RESIDENCY_RESPONSE: 'Committee response', MEETING_SCHEDULED: 'Meeting proposed', ESCALATED_TO_ADMIN: 'Escalated to admin', FEEDBACK_SUBMITTED: 'Feedback submitted', MARKED_RESOLVED: 'Marked resolved' };
+      RESIDENCY_RESPONSE: 'Committee response', MEETING_SCHEDULED: 'Meeting proposed', ESCALATED_TO_ADMIN: 'Escalated to admin', FEEDBACK_SUBMITTED: 'Feedback submitted', MARKED_RESOLVED: 'Marked resolved', AI_REANALYZED: 'AI audio re-analysis' };
     body.innerHTML = `
       <dl class="kv">
         <dt>Status</dt><dd><span class="tag ${statusTagClass(c.status)}">${esc(c.status)}</span></dd>
@@ -189,7 +224,7 @@ async function openComplaintDetail(id, extraHtml = '') {
         ${c.rating ? `<dt>Rating</dt><dd>${'★'.repeat(c.rating)}${'☆'.repeat(5 - c.rating)} ${esc(c.feedback || '')}</dd>` : ''}
       </dl>
       <h3>Evidence</h3>${evidenceHtml(c)}
-      ${c.has_audio ? `<h3>AI audio verification</h3>${aiReportHtml(c)}${currentUser && currentUser.role === 'admin' ? `<div style="margin-top:10px;"><button class="secondary" id="reanalyzeBtn-${c.id}" onclick="triggerReanalyze(${c.id})">🔄 Re-run AI analysis</button><span id="reanalyzeStatus-${c.id}" class="muted" style="margin-left:8px;"></span></div>` : ''}` : ''}
+      ${c.has_audio ? `<h3>AI audio verification</h3>${aiReportHtml(c)}${currentUser && currentUser.role === 'admin' && c.ai_verdict !== 'Verification Failed' ? `<div style="margin-top:10px;"><button class="secondary" id="reanalyzeBtn-${c.id}" onclick="triggerReanalyze(${c.id})">🔄 Re-run AI analysis</button><span id="reanalyzeStatus-${c.id}" class="muted" style="margin-left:8px;"></span></div>` : ''}` : ''}
       ${extraHtml}
       <h3>Progress</h3>
       <ul class="timeline">${timeline.map(t => `<li><strong>${esc(actionLabel[t.action] || t.action)}</strong>
@@ -199,20 +234,217 @@ async function openComplaintDetail(id, extraHtml = '') {
   }
 }
 
+// User-facing and admin retry verification helper
+window.retryVerification = async function(id) {
+  const btn = document.getElementById(`retryVerifBtn-${id}`);
+  const status = document.getElementById(`retryVerifStatus-${id}`);
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Retrying AI verification…';
+  try {
+    await apiFetch(`/complaints/${id}/reanalyze`, { method: 'POST' });
+    if (typeof loadMine === 'function') loadMine();
+    if (typeof loadStats === 'function') loadStats();
+    if (typeof loadFlagged === 'function') loadFlagged();
+    openComplaintDetail(id);
+  } catch (err) {
+    if (status) status.textContent = 'Retry error: ' + err.message;
+    if (btn) btn.disabled = false;
+  }
+};
+
 window.triggerReanalyze = async function(id) {
   const btn = document.getElementById(`reanalyzeBtn-${id}`);
   const status = document.getElementById(`reanalyzeStatus-${id}`);
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Analysing audio clip…';
   try {
-    await apiFetch(`/admin/complaints/${id}/reanalyze`, { method: 'POST' });
+    await apiFetch(`/complaints/${id}/reanalyze`, { method: 'POST' });
     if (typeof loadStats === 'function') loadStats();
+    if (typeof loadFlagged === 'function') loadFlagged();
     openComplaintDetail(id);
   } catch (err) {
     if (status) status.textContent = 'Error: ' + err.message;
     if (btn) btn.disabled = false;
   }
 };
+
+// ---------- Strong Password Helpers ----------
+function validatePassword(pw) {
+  if (!pw || typeof pw !== 'string') return 'Password is required';
+  if (pw.length < 8) return 'Password must be at least 8 characters long';
+  if (!/[A-Z]/.test(pw)) return 'Password must contain at least 1 uppercase letter (A–Z)';
+  if (!/[a-z]/.test(pw)) return 'Password must contain at least 1 lowercase letter (a–z)';
+  if (!/[0-9]/.test(pw)) return 'Password must contain at least 1 number (0–9)';
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(pw)) return 'Password must contain at least 1 special character (@, #, $, !, %, etc.)';
+  return null;
+}
+
+function togglePassword(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    btn.title = 'Hide password';
+    btn.setAttribute('aria-label', 'Hide password');
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+    btn.title = 'Show password';
+    btn.setAttribute('aria-label', 'Show password');
+  }
+}
+
+function bindPasswordChecklist(inputId, containerId) {
+  const input = document.getElementById(inputId);
+  const container = document.getElementById(containerId);
+  if (!input || !container) return;
+
+  const reqLength = container.querySelector('.req-len');
+  const reqUpper = container.querySelector('.req-upper');
+  const reqLower = container.querySelector('.req-lower');
+  const reqNum = container.querySelector('.req-num');
+  const reqSpecial = container.querySelector('.req-special');
+
+  const update = () => {
+    const val = input.value || '';
+    if (reqLength) {
+      const ok = val.length >= 8;
+      reqLength.classList.toggle('valid', ok);
+      reqLength.classList.toggle('invalid', !ok);
+    }
+    if (reqUpper) {
+      const ok = /[A-Z]/.test(val);
+      reqUpper.classList.toggle('valid', ok);
+      reqUpper.classList.toggle('invalid', !ok);
+    }
+    if (reqLower) {
+      const ok = /[a-z]/.test(val);
+      reqLower.classList.toggle('valid', ok);
+      reqLower.classList.toggle('invalid', !ok);
+    }
+    if (reqNum) {
+      const ok = /[0-9]/.test(val);
+      reqNum.classList.toggle('valid', ok);
+      reqNum.classList.toggle('invalid', !ok);
+    }
+    if (reqSpecial) {
+      const ok = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(val);
+      reqSpecial.classList.toggle('valid', ok);
+      reqSpecial.classList.toggle('invalid', !ok);
+    }
+  };
+
+  input.addEventListener('input', update);
+  update();
+}
+
+function passwordRequirementsHtml(containerId = 'pwReqs') {
+  return `
+    <div class="password-requirements" id="${containerId}">
+      <div class="req-title">Password must contain:</div>
+      <ul>
+        <li class="req-len invalid">Minimum 8 characters</li>
+        <li class="req-upper invalid">At least 1 uppercase letter (A–Z)</li>
+        <li class="req-lower invalid">At least 1 lowercase letter (a–z)</li>
+        <li class="req-num invalid">At least 1 number (0–9)</li>
+        <li class="req-special invalid">At least 1 special character (@, #, $, !, %, etc.)</li>
+      </ul>
+    </div>
+  `;
+}
+
+function openChangePasswordDialog() {
+  let dlg = document.getElementById('changePasswordDialog');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'changePasswordDialog';
+    document.body.appendChild(dlg);
+  }
+
+  dlg.innerHTML = `
+    <div class="dlg-head">
+      <h2>Change Password</h2>
+      <button class="secondary" onclick="this.closest('dialog').close()">Cancel</button>
+    </div>
+    <div class="dlg-body">
+      <form id="changePasswordForm">
+        <label for="currentPassword">Current password</label>
+        <div class="password-wrap">
+          <input type="password" id="currentPassword" required autocomplete="current-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('currentPassword', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
+
+        <label for="newPassword">New password</label>
+        <div class="password-wrap">
+          <input type="password" id="newPassword" required autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('newPassword', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
+        ${passwordRequirementsHtml('changePwReqs')}
+
+        <label for="confirmNewPassword">Confirm new password</label>
+        <div class="password-wrap">
+          <input type="password" id="confirmNewPassword" required autocomplete="new-password">
+          <button type="button" class="password-toggle-btn" onclick="togglePassword('confirmNewPassword', this)" title="Show password" aria-label="Show password">👁️</button>
+        </div>
+
+        <button type="submit" style="width:100%; margin-top:16px;" id="changePwBtn">Update password</button>
+        <p class="error-msg" id="changePwErr" style="display:none;"></p>
+        <p class="success-msg" id="changePwSuccess" style="display:none;"></p>
+      </form>
+    </div>
+  `;
+
+  bindPasswordChecklist('newPassword', 'changePwReqs');
+
+  const form = dlg.querySelector('#changePasswordForm');
+  const errP = dlg.querySelector('#changePwErr');
+  const succP = dlg.querySelector('#changePwSuccess');
+  const btn = dlg.querySelector('#changePwBtn');
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    errP.style.display = 'none';
+    succP.style.display = 'none';
+
+    const current_password = document.getElementById('currentPassword').value;
+    const new_password = document.getElementById('newPassword').value;
+    const confirm = document.getElementById('confirmNewPassword').value;
+
+    const pwErr = validatePassword(new_password);
+    if (pwErr) {
+      errP.textContent = pwErr;
+      errP.style.display = 'block';
+      return;
+    }
+
+    if (new_password !== confirm) {
+      errP.textContent = 'New passwords do not match';
+      errP.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const res = await apiFetch('/auth/change-password', {
+        method: 'POST',
+        body: { current_password, new_password }
+      });
+      succP.textContent = res.message || 'Password changed successfully.';
+      succP.style.display = 'block';
+      form.reset();
+      bindPasswordChecklist('newPassword', 'changePwReqs');
+      setTimeout(() => dlg.close(), 1800);
+    } catch (err) {
+      errP.textContent = err.message;
+      errP.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  dlg.showModal();
+}
 
 // ---------- Announcements feed (resident + committee + admin) ----------
 async function loadAnnouncementFeed(container, { markSeen = true } = {}) {

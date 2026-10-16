@@ -98,11 +98,10 @@ router.post('/complaints/:id/reanalyze', async (req, res) => {
   try {
     const ai = await analyzeAudio(audioFilePath);
     const ai_verdict = verdictFor(c.claimed_noise_type, ai);
-    const newStatus = ai_verdict === 'Verified' ? 'Pending' : (c.status === 'Pending' ? 'Pending' : 'Unverified');
     db.prepare(`
       UPDATE complaints
       SET ai_category = ?, ai_confidence = ?, noise_level = ?, ai_verdict = ?, ai_details = ?,
-          status = CASE WHEN status = 'Unverified' AND ? = 'Verified' THEN 'Pending' ELSE status END,
+          status = CASE WHEN ? = 'Verified' AND status = 'Unverified' THEN 'Pending' ELSE status END,
           updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -118,6 +117,8 @@ router.post('/complaints/:id/reanalyze', async (req, res) => {
     res.json(parseDetails(db.prepare(`${COMPLAINT_SELECT} WHERE c.id = ?`).get(c.id)));
   } catch (err) {
     console.error('Re-analysis error for complaint #' + c.id + ':', err.message);
+    db.prepare(`UPDATE complaints SET ai_verdict = 'Verification Failed', updated_at = datetime('now') WHERE id = ?`).run(c.id);
+    logAction(c.id, req.user.id, 'AI_REANALYSIS_FAILED', err.message);
     res.status(502).json({ error: `AI analysis failed: ${err.message}` });
   }
 });

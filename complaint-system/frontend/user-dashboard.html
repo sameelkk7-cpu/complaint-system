@@ -9,7 +9,7 @@
 <body>
 <div class="topbar">
   <div class="brand">Residents' Complaint Desk<span>Resident portal</span></div>
-  <div class="who"><span id="whoName"></span><button onclick="logout()">Sign out</button></div>
+  <div class="who"><span id="whoName"></span><button class="secondary" onclick="openChangePasswordDialog()" style="background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.4); color:#fff;">🔒 Change Password</button><button onclick="logout()">Sign out</button></div>
 </div>
 
 <div class="shell">
@@ -28,7 +28,7 @@
   <div id="viewNew">
     <div class="panel">
       <h2>Raise a new complaint</h2>
-      <p class="muted">For noise complaints, add a short audio clip (5–10 seconds). It is analysed by AI (YAMNet) to check it matches what you reported. A photo is optional for any complaint.</p>
+      <p class="muted">Audio evidence is <strong>mandatory</strong> for all complaints. Add a short audio clip (5–10 seconds) — it is verified by AI (YAMNet) for noise complaints. A photo is optional.</p>
       <form id="complaintForm">
         <label for="category">Category</label>
         <select id="category" required>
@@ -57,7 +57,7 @@
         <label for="description">Description</label>
         <textarea id="description" required placeholder="What happened, where, and when?"></textarea>
 
-        <div class="form-row">
+      <div class="form-row">
           <div>
             <label for="incident_datetime">Date &amp; time of incident</label>
             <input type="datetime-local" id="incident_datetime">
@@ -68,11 +68,15 @@
           </div>
         </div>
 
-        <label for="audio">Audio evidence</label>
-        <input type="file" id="audio" accept="audio/*">
+        <label for="audio">Audio evidence <span class="required-star">*</span></label>
+        <div class="mandatory-audio-notice">
+          <span class="badge-mandatory">Required</span> Audio evidence is mandatory to submit a complaint.
+        </div>
+        <input type="file" id="audio" accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.aac" required>
         <div class="rec-box">
           <button type="button" class="secondary" id="recBtn">🎙️ Record with microphone</button>
           <span id="recStatus" class="muted" style="margin-left:8px;"></span>
+          <div id="audioStatusPill" style="display:none;"></div>
           <audio id="audioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
         </div>
 
@@ -80,8 +84,16 @@
         <input type="file" id="photo" accept="image/*">
         <img id="photoPreview" class="photo-preview" alt="Photo preview">
 
-        <button type="submit" style="margin-top:18px;" id="submitBtn">Submit complaint</button>
-        <p class="muted" id="analyzingMsg" style="display:none;">Uploading evidence and analysing audio… this can take a few seconds.</p>
+        <div class="upload-progress-box" id="progressBox" style="display:none;">
+          <div style="font-weight:600; font-size:0.85rem;" id="progressText">Uploading audio evidence…</div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill indeterminate" id="progressBar"></div>
+          </div>
+          <div class="muted" style="font-size:0.78rem;">Running YAMNet AI audio verification. Please wait…</div>
+        </div>
+
+        <button type="submit" style="margin-top:18px;" id="submitBtn" disabled>Submit complaint</button>
+        <p class="muted" id="submitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">Audio evidence is mandatory to submit a complaint.</p>
         <p class="error-msg" id="errorMsg" style="display:none;"></p>
         <div id="resultBox" style="display:none; margin-top:14px;"></div>
       </form>
@@ -153,33 +165,126 @@
     if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
   };
 
-  // Microphone recording (needs https:// or http://localhost)
+  // Mandatory Audio handling & verification validation
   let recordedFile = null, recording = false;
-  const recBtn = document.getElementById('recBtn'), recStatus = document.getElementById('recStatus'), preview = document.getElementById('audioPreview');
-  function setPreview(file) { preview.src = URL.createObjectURL(file); preview.style.display = 'block'; }
-  document.getElementById('audio').onchange = e => { recordedFile = null; if (e.target.files[0]) setPreview(e.target.files[0]); else preview.style.display = 'none'; };
+  const recBtn = document.getElementById('recBtn'), recStatus = document.getElementById('recStatus');
+  const preview = document.getElementById('audioPreview'), statusPill = document.getElementById('audioStatusPill');
+  const audioInput = document.getElementById('audio');
+  const submitBtn = document.getElementById('submitBtn');
+  const submitHint = document.getElementById('submitHint');
+
+  function updateSubmitState() {
+    const hasAudio = !!(recordedFile || (audioInput.files && audioInput.files[0]));
+    submitBtn.disabled = !hasAudio;
+    submitHint.style.display = hasAudio ? 'none' : 'block';
+  }
+
+  function validateAudio(file) {
+    if (!file) {
+      statusPill.style.display = 'none';
+      updateSubmitState();
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      statusPill.className = 'audio-status-pill error';
+      statusPill.innerHTML = '⚠️ File exceeds 25MB maximum limit';
+      statusPill.style.display = 'inline-flex';
+      audioInput.value = '';
+      recordedFile = null;
+      preview.style.display = 'none';
+      updateSubmitState();
+      return;
+    }
+    if (file.size < 100) {
+      statusPill.className = 'audio-status-pill error';
+      statusPill.innerHTML = '⚠️ Audio file is empty or corrupted';
+      statusPill.style.display = 'inline-flex';
+      audioInput.value = '';
+      recordedFile = null;
+      preview.style.display = 'none';
+      updateSubmitState();
+      return;
+    }
+
+    const testAudio = new Audio();
+    const url = URL.createObjectURL(file);
+    testAudio.src = url;
+    testAudio.onloadedmetadata = () => {
+      if (testAudio.duration && testAudio.duration < 1.0) {
+        statusPill.className = 'audio-status-pill error';
+        statusPill.innerHTML = `⚠️ Audio recording too short (${testAudio.duration.toFixed(1)}s, min 1s required)`;
+        statusPill.style.display = 'inline-flex';
+        audioInput.value = '';
+        recordedFile = null;
+        preview.style.display = 'none';
+        updateSubmitState();
+      } else {
+        const durStr = testAudio.duration ? ` · ${testAudio.duration.toFixed(1)}s` : '';
+        statusPill.className = 'audio-status-pill valid';
+        statusPill.innerHTML = `✓ Audio ready${durStr} (${Math.round(file.size / 1024)} KB)`;
+        statusPill.style.display = 'inline-flex';
+        preview.src = url;
+        preview.style.display = 'block';
+        updateSubmitState();
+      }
+    };
+    testAudio.onerror = () => {
+      statusPill.className = 'audio-status-pill valid';
+      statusPill.innerHTML = `✓ Audio attached (${Math.round(file.size / 1024)} KB)`;
+      statusPill.style.display = 'inline-flex';
+      preview.src = url;
+      preview.style.display = 'block';
+      updateSubmitState();
+    };
+  }
+
+  audioInput.onchange = e => {
+    recordedFile = null;
+    validateAudio(e.target.files[0]);
+  };
+
   recBtn.onclick = async () => {
     try {
       if (!recording) {
-        await AudioRecorder.start(sec => { recStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s`; if (sec >= 15) recBtn.click(); });
-        recording = true; recBtn.textContent = '⏹ Stop recording';
+        recordedFile = null;
+        updateSubmitState();
+        await AudioRecorder.start(sec => {
+          recStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s (min 2s)`;
+          if (sec >= 15) recBtn.click();
+        });
+        recording = true;
+        recBtn.textContent = '⏹ Stop recording';
       } else {
-        recording = false; recBtn.textContent = '🎙️ Record with microphone'; recStatus.textContent = 'Processing…';
+        recording = false;
+        recBtn.textContent = '🎙️ Record with microphone';
+        recStatus.textContent = 'Processing clip…';
         recordedFile = await AudioRecorder.stop();
-        document.getElementById('audio').value = '';
-        setPreview(recordedFile); recStatus.textContent = 'Recording ready — it will be attached.';
+        audioInput.value = '';
+        validateAudio(recordedFile);
+        recStatus.textContent = 'Microphone recording complete.';
       }
     } catch (err) {
-      recording = false; recBtn.textContent = '🎙️ Record with microphone';
-      recStatus.textContent = 'Microphone not available: ' + err.message;
+      recording = false;
+      recBtn.textContent = '🎙️ Record with microphone';
+      recStatus.textContent = 'Microphone unavailable: ' + err.message;
+      updateSubmitState();
     }
   };
 
   document.getElementById('complaintForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errorMsg = document.getElementById('errorMsg'), resultBox = document.getElementById('resultBox');
-    const analyzingMsg = document.getElementById('analyzingMsg'), submitBtn = document.getElementById('submitBtn');
+    const progressBox = document.getElementById('progressBox');
+    const progressText = document.getElementById('progressText');
     errorMsg.style.display = 'none'; resultBox.style.display = 'none';
+
+    const audioFile = recordedFile || (audioInput.files && audioInput.files[0]);
+    if (!audioFile) {
+      errorMsg.textContent = 'Audio evidence is mandatory to submit a complaint. Please record or attach an audio file.';
+      errorMsg.style.display = 'block';
+      updateSubmitState();
+      return;
+    }
 
     const form = new FormData();
     form.append('category', categorySel.value);
@@ -187,13 +292,14 @@
     form.append('description', document.getElementById('description').value);
     form.append('incident_datetime', document.getElementById('incident_datetime').value);
     form.append('against_unit', document.getElementById('against_unit').value);
-    const audioFile = recordedFile || document.getElementById('audio').files[0];
+    form.append('audio', audioFile);
     const photoFile = document.getElementById('photo').files[0];
-    if (audioFile) form.append('audio', audioFile);
     if (photoFile) form.append('photo', photoFile);
 
     submitBtn.disabled = true;
-    if (audioFile) analyzingMsg.style.display = 'block';
+    progressBox.style.display = 'block';
+    progressText.textContent = 'Uploading evidence & verifying audio with AI…';
+
     try {
       const c = await apiFetch('/complaints', { method: 'POST', isForm: true, body: form });
       let cls = '', html = `<strong>Complaint #${c.id} submitted.</strong>`;
@@ -204,11 +310,14 @@
       resultBox.style.display = 'block';
       document.getElementById('complaintForm').reset();
       recordedFile = null; preview.style.display = 'none'; recStatus.textContent = '';
+      statusPill.style.display = 'none';
       document.getElementById('photoPreview').style.display = 'none'; syncNoise();
+      updateSubmitState();
     } catch (err) {
       errorMsg.textContent = err.message; errorMsg.style.display = 'block';
+      updateSubmitState();
     } finally {
-      submitBtn.disabled = false; analyzingMsg.style.display = 'none';
+      progressBox.style.display = 'none';
     }
   });
 
