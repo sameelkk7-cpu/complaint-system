@@ -141,14 +141,20 @@ async function analyzeAudio(filePath) {
 
   // 1. Try local AI service (quick timeout)
   try {
-    return await sendToAiUrl(localUrl, filePath, 8000);
+    return await sendToAiUrl(localUrl, filePath, 5000);
   } catch (errLocal) {
-    // 2. Try remote Render AI service
+    // 2. Try remote Render AI service (with retry to handle Render free-tier cold start)
     try {
-      return await sendToAiUrl(remoteUrl, filePath, 25000);
-    } catch (errRemote) {
-      console.warn(`[AI] Verification service unreachable (local: ${errLocal.message}, remote: ${errRemote.message})`);
-      throw new Error(`AI verification service unavailable (${errLocal.message || errRemote.message})`);
+      return await sendToAiUrl(remoteUrl, filePath, 45000);
+    } catch (errRemoteFirst) {
+      console.warn(`[AI] Remote attempt 1 failed (${errRemoteFirst.message}), retrying in 2s (Render cold start)...`);
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        return await sendToAiUrl(remoteUrl, filePath, 45000);
+      } catch (errRemote) {
+        console.warn(`[AI] Verification service unreachable (local: ${errLocal.message}, remote: ${errRemote.message})`);
+        throw new Error(`AI verification service unavailable (${errLocal.message || errRemote.message})`);
+      }
     }
   }
 }
