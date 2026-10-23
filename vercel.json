@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "outputDirectory": "complaint-system/frontend",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
@@ -29,26 +30,6 @@
     {
       "source": "/api/(.*)",
       "destination": "https://complaint-system-backend-gtrc.onrender.com/api/$1"
-    },
-    {
-      "source": "/css/(.*)",
-      "destination": "/complaint-system/frontend/css/$1"
-    },
-    {
-      "source": "/js/(.*)",
-      "destination": "/complaint-system/frontend/js/$1"
-    },
-    {
-      "source": "/",
-      "destination": "/complaint-system/frontend/index.html"
-    },
-    {
-      "source": "/(.*)\\.html",
-      "destination": "/complaint-system/frontend/$1.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/complaint-system/frontend/$1"
     }
   ]
 }
