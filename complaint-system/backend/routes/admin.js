@@ -66,6 +66,26 @@ router.get('/complaints/:id', (req, res) => {
   res.json(parseDetails(c));
 });
 
+// Admin-only removal; keep the audit history without a dangling foreign key.
+router.delete('/complaints/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid complaint ID' });
+  const c = db.prepare('SELECT * FROM complaints WHERE id = ?').get(id);
+  if (!c) return res.status(404).json({ error: 'Complaint not found' });
+  db.transaction(() => {
+    db.prepare('UPDATE audit_log SET complaint_id = NULL WHERE complaint_id = ?').run(id);
+    db.prepare('DELETE FROM complaints WHERE id = ?').run(id);
+    logAction(null, req.user.id, 'COMPLAINT_DELETED', `complaint_id=${id}, category=${c.category}`);
+  })();
+  for (const [folder, filename] of [['audio', c.audio_path], ['photos', c.photo_path]]) {
+    if (!filename) continue;
+    fs.unlink(path.join(UPLOAD_ROOT, folder, path.basename(filename)), err => {
+      if (err && err.code !== 'ENOENT') console.error('Could not remove deleted complaint evidence:', err.message);
+    });
+  }
+  res.json({ message: `Complaint #${id} deleted` });
+});
+
 // Flagged ("Unverified") complaints: accept -> Pending, reject -> Rejected
 router.patch('/complaints/:id/review', (req, res) => {
   const { decision } = req.body;

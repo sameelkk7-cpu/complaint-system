@@ -26,6 +26,7 @@
     <button class="tab" data-tab="users">Resident verification</button>
     <button class="tab" data-tab="offenders">Repeat offenders</button>
     <button class="tab" data-tab="reports">Reports</button>
+    <button class="tab" data-tab="feedback">Resident feedback</button>
     <button class="tab" data-tab="announce">Announcements</button>
   </div>
 
@@ -67,6 +68,11 @@
       </table>
       <div class="empty-state" id="offendersEmpty" style="display:none;">No repeat patterns detected yet (a flat needs 2+ complaints).</div>
     </div>
+  </div>
+
+  <div class="tabview" id="view-feedback" style="display:none;">
+    <h2>Resident ratings and feedback</h2>
+    <div id="feedbackList" aria-live="polite"></div>
   </div>
 
   <div class="tabview" id="view-reports" style="display:none;">
@@ -118,7 +124,7 @@
       document.querySelectorAll('.tabview').forEach(v => v.style.display = 'none');
       btn.classList.add('active');
       document.getElementById(`view-${btn.dataset.tab}`).style.display = '';
-      ({ flagged: loadFlagged, users: loadUsers, offenders: loadOffenders, reports: loadReports, announce: loadAnnouncementsAdmin })[btn.dataset.tab]?.();
+      ({ complaints: loadStats, flagged: loadFlagged, users: loadUsers, offenders: loadOffenders, reports: loadReports, feedback: loadFeedback, announce: loadAnnouncementsAdmin })[btn.dataset.tab]?.();
     };
   });
   const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { alert(err.message); } };
@@ -145,7 +151,7 @@
         : '<span class="muted">—</span>';
       tr.innerHTML = `
         <td><button class="row-link" onclick="openComplaintDetail(${c.id})">#${c.id}</button></td>
-        <td>${esc(c.resident_name)}<div class="muted">${esc(c.resident_flat || '')}</div></td>
+        <td>${esc(c.resident_name)}<div class="muted">${esc(c.resident_flat || '')}</div>${c.rating ? `<div class="resident-rating" aria-label="Rated ${Number(c.rating)} out of 5">${Number(c.rating)} / 5 stars</div>` : ''}</td>
         <td>${esc(c.category)}${c.against_unit ? `<div class="muted">vs ${esc(c.against_unit)}</div>` : ''}</td>
         <td>${photoCell}</td>
         <td>${audioCell}</td>
@@ -160,12 +166,37 @@
             ${STATUSES.filter(s => s !== c.status).map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
           <button class="secondary" style="margin-top:6px;" onclick="openAssign(${c.id}, '${esc(c.assigned_block || '')}')">Assign</button>
+          <button class="danger" style="margin-top:6px;" onclick="deleteComplaint(${c.id}, this)">Delete complaint</button>
         </td>`;
       body.appendChild(tr);
     });
   }
 
   const changeStatus = safe(async (id, status) => { if (!status) return; await apiFetch(`/admin/complaints/${id}/status`, { method: 'PATCH', body: { status } }); loadStats(); });
+
+  const deleteComplaint = safe(async (id, button) => {
+    if (!confirm(`Permanently delete complaint #${id}, its rating, and attached evidence? This cannot be undone.`)) return;
+    button.disabled = true;
+    try {
+      await apiFetch(`/admin/complaints/${id}`, { method: 'DELETE' });
+      await loadStats();
+    } finally { button.disabled = false; }
+  });
+
+  async function loadFeedback() {
+    const list = document.getElementById('feedbackList');
+    list.textContent = 'Loading resident feedback...';
+    try {
+      const rows = (await apiFetch('/admin/complaints')).filter(c => c.rating != null);
+      list.innerHTML = rows.length ? rows.map(c => `
+        <article class="panel feedback-card">
+          <div class="feedback-heading"><button class="row-link" onclick="openComplaintDetail(${c.id})">Complaint #${c.id}</button>
+            <strong class="resident-rating">${Number(c.rating)} / 5 stars</strong></div>
+          <p class="muted">${esc(c.resident_name)}${c.resident_flat ? ' · ' + esc(c.resident_flat) : ''} · ${esc(c.category)}</p>
+          <p class="feedback-comment">${esc(c.feedback || 'No written feedback provided.')}</p>
+        </article>`).join('') : '<div class="panel empty-state">No resident ratings yet.</div>';
+    } catch (err) { list.textContent = err.message; }
+  }
 
   // ---- Assign dialog ----
   let assignCid = null, committee = [];
