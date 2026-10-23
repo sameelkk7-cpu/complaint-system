@@ -100,7 +100,7 @@
     <!-- Direct submission view (No permissions / login needed) -->
     <div id="viewDirectSubmit" style="display:none;">
       <h3>Raise a Complaint Directly</h3>
-      <p class="muted" style="font-size:0.88rem;">No login needed. Audio evidence is mandatory and verified through AI sound analysis.</p>
+      <p class="muted" style="font-size:0.88rem;">No login needed. Record audio with your microphone; a recording is mandatory and verified through AI sound analysis.</p>
 
       <form id="publicComplaintForm">
         <label for="pubCategory">Category</label>
@@ -141,11 +141,10 @@
           </div>
         </div>
 
-        <label for="pubAudio">Audio evidence <span class="required-star">*</span></label>
+        <label for="pubRecBtn">Microphone recording <span class="required-star">*</span></label>
         <div class="mandatory-audio-notice">
-          <span class="badge-mandatory">Required</span> Audio evidence is mandatory to submit a complaint.
+          <span class="badge-mandatory">Required</span> A microphone recording is mandatory to submit a complaint.
         </div>
-        <input type="file" id="pubAudio" accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.aac" required>
         <div class="rec-box">
           <button type="button" class="secondary" id="pubRecBtn">🎙️ Record with microphone</button>
           <span id="pubRecStatus" class="muted" style="margin-left:8px;"></span>
@@ -166,7 +165,7 @@
         </div>
 
         <button type="submit" style="width:100%; margin-top:18px;" id="pubSubmitBtn" disabled>Submit complaint</button>
-        <p class="muted" id="pubSubmitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">Audio evidence is mandatory to submit a complaint.</p>
+        <p class="muted" id="pubSubmitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">A microphone recording is mandatory to submit a complaint.</p>
         <p class="error-msg" id="pubErrorMsg" style="display:none;"></p>
         <div id="pubResultBox" style="display:none; margin-top:14px;"></div>
       </form>
@@ -321,19 +320,21 @@
 
   // Mandatory Audio handling & verification validation
   let pubRecordedFile = null, pubRecording = false;
+  let audioReady = false;
   const pubRecBtn = document.getElementById('pubRecBtn'), pubRecStatus = document.getElementById('pubRecStatus');
   const pubPreview = document.getElementById('pubAudioPreview'), pubStatusPill = document.getElementById('pubAudioStatusPill');
-  const pubAudioInput = document.getElementById('pubAudio');
   const pubSubmitBtn = document.getElementById('pubSubmitBtn');
   const pubSubmitHint = document.getElementById('pubSubmitHint');
 
   function updatePubSubmitState() {
-    const hasAudio = !!(pubRecordedFile || (pubAudioInput.files && pubAudioInput.files[0]));
+    const hasAudio = !!pubRecordedFile && audioReady && !pubRecording;
     pubSubmitBtn.disabled = !hasAudio;
     pubSubmitHint.style.display = hasAudio ? 'none' : 'block';
   }
 
   function validatePubAudio(file) {
+    audioReady = false;
+    updatePubSubmitState();
     if (!file) {
       pubStatusPill.style.display = 'none';
       updatePubSubmitState();
@@ -343,7 +344,7 @@
       pubStatusPill.className = 'audio-status-pill error';
       pubStatusPill.innerHTML = '⚠️ File exceeds 25MB maximum limit';
       pubStatusPill.style.display = 'inline-flex';
-      pubAudioInput.value = '';
+
       pubRecordedFile = null;
       pubPreview.style.display = 'none';
       updatePubSubmitState();
@@ -353,7 +354,7 @@
       pubStatusPill.className = 'audio-status-pill error';
       pubStatusPill.innerHTML = '⚠️ Audio file is empty or corrupted';
       pubStatusPill.style.display = 'inline-flex';
-      pubAudioInput.value = '';
+
       pubRecordedFile = null;
       pubPreview.style.display = 'none';
       updatePubSubmitState();
@@ -368,13 +369,14 @@
         pubStatusPill.className = 'audio-status-pill error';
         pubStatusPill.innerHTML = `⚠️ Audio recording too short (${testAudio.duration.toFixed(1)}s, min 1s required)`;
         pubStatusPill.style.display = 'inline-flex';
-        pubAudioInput.value = '';
+
         pubRecordedFile = null;
         pubPreview.style.display = 'none';
         updatePubSubmitState();
       } else {
         const durStr = testAudio.duration ? ` · ${testAudio.duration.toFixed(1)}s` : '';
-        pubStatusPill.className = 'audio-status-pill valid';
+        audioReady = true;
+      pubStatusPill.className = 'audio-status-pill valid';
         pubStatusPill.innerHTML = `✓ Audio ready${durStr} (${Math.round(file.size / 1024)} KB)`;
         pubStatusPill.style.display = 'inline-flex';
         pubPreview.src = url;
@@ -384,8 +386,9 @@
     };
     testAudio.onerror = () => {
       // In case browser decoder does not support container metadata directly
+      audioReady = true;
       pubStatusPill.className = 'audio-status-pill valid';
-      pubStatusPill.innerHTML = `✓ Audio attached (${Math.round(file.size / 1024)} KB)`;
+      pubStatusPill.innerHTML = `✓ Recording ready (${Math.round(file.size / 1024)} KB)`;
       pubStatusPill.style.display = 'inline-flex';
       pubPreview.src = url;
       pubPreview.style.display = 'block';
@@ -393,15 +396,16 @@
     };
   }
 
-  pubAudioInput.onchange = e => {
-    pubRecordedFile = null;
-    validatePubAudio(e.target.files[0]);
-  };
 
   pubRecBtn.onclick = async () => {
+    pubRecBtn.disabled = true;
     try {
       if (!pubRecording) {
         pubRecordedFile = null;
+        audioReady = false;
+        pubPreview.pause();
+        pubPreview.style.display = 'none';
+        pubStatusPill.style.display = 'none';
         updatePubSubmitState();
         await AudioRecorder.start(sec => {
           pubRecStatus.innerHTML = `<span class="rec-dot"></span>Recording… ${sec.toFixed(1)}s (min 2s)`;
@@ -414,7 +418,7 @@
         pubRecBtn.textContent = '🎙️ Record with microphone';
         pubRecStatus.textContent = 'Processing clip…';
         pubRecordedFile = await AudioRecorder.stop();
-        pubAudioInput.value = '';
+
         validatePubAudio(pubRecordedFile);
         pubRecStatus.textContent = 'Microphone recording complete.';
       }
@@ -423,6 +427,8 @@
       pubRecBtn.textContent = '🎙️ Record with microphone';
       pubRecStatus.textContent = 'Microphone unavailable: ' + err.message;
       updatePubSubmitState();
+    } finally {
+      pubRecBtn.disabled = false;
     }
   };
 
@@ -437,9 +443,9 @@
     errorMsg.style.display = 'none';
     resultBox.style.display = 'none';
 
-    const audioFile = pubRecordedFile || (pubAudioInput.files && pubAudioInput.files[0]);
-    if (!audioFile) {
-      errorMsg.textContent = 'Audio evidence is mandatory to submit a complaint. Please record or attach an audio file.';
+    const audioFile = pubRecordedFile;
+    if (!audioFile || !audioReady || pubRecording) {
+      errorMsg.textContent = 'A microphone recording is mandatory to submit a complaint. Please record audio using the microphone button.';
       errorMsg.style.display = 'block';
       updatePubSubmitState();
       return;
