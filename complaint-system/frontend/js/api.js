@@ -140,6 +140,7 @@ function evidenceHtml(c) {
 }
 
 function aiReportHtml(c) {
+  if (c.category !== 'Noise Disturbance' && !c.has_audio) return '';
   if (!c.has_audio) {
     return `<div class="ai-box bad"><strong>Missing Audio Evidence:</strong> Audio verification is mandatory to submit a complaint.</div>`;
   }
@@ -469,6 +470,82 @@ async function refreshAnnouncementBadge(tabButton) {
 }
 
 // ---------- In-browser audio recorder -> 16 kHz mono WAV (what YAMNet wants) ----------
+function setupPhotoEvidence(inputId) {
+  const input = document.getElementById(inputId);
+  const preview = document.getElementById(inputId + 'Preview');
+  const video = document.getElementById('cameraPreview');
+  const box = document.getElementById('cameraBox');
+  const error = document.getElementById('photoError');
+  const open = document.getElementById('openCamera');
+  const capture = document.getElementById('capturePhoto');
+  const remove = document.getElementById('removePhoto');
+  let file = null, stream = null, previewUrl = null, requestId = 0;
+  function close() {
+    requestId++;
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    stream = null;
+    video.srcObject = null;
+    box.hidden = true;
+    open.disabled = false;
+  }
+  function select(next) {
+    if (next && (!next.type.startsWith('image/') || next.size > 25 * 1024 * 1024)) {
+      error.textContent = 'Choose an image smaller than 25 MB.';
+      input.value = '';
+      return;
+    }
+    error.textContent = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    file = next || null;
+    previewUrl = file ? URL.createObjectURL(file) : null;
+    if (previewUrl) preview.src = previewUrl;
+    else preview.removeAttribute('src');
+    preview.style.display = file ? 'block' : 'none';
+    remove.hidden = !file;
+  }
+  input.onchange = () => { close(); select(input.files[0]); };
+  open.onclick = async () => {
+    close();
+    const id = requestId;
+    open.disabled = true;
+    error.textContent = '';
+    try {
+      const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      if (id !== requestId) { next.getTracks().forEach(track => track.stop()); return; }
+      stream = next;
+      video.srcObject = stream;
+      box.hidden = false;
+      await video.play();
+    } catch (err) {
+      if (id !== requestId) return;
+      close();
+      error.textContent = 'Camera unavailable. Allow camera access or attach a photo from your device.';
+    }
+  };
+  capture.onclick = () => {
+    if (!video.videoWidth || !stream) { error.textContent = 'Wait for the camera preview, then try again.'; return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const id = requestId;
+    capture.disabled = true;
+    canvas.toBlob(blob => {
+      capture.disabled = false;
+      if (id !== requestId) return;
+      if (!blob) { error.textContent = 'Could not capture the photo. Please try again.'; return; }
+      input.value = '';
+      select(new File([blob], 'live-photo.jpg', { type: 'image/jpeg' }));
+      close();
+    }, 'image/jpeg', 0.9);
+  };
+  document.getElementById('closeCamera').onclick = close;
+  function reset() { close(); input.value = ''; select(null); }
+  remove.onclick = reset;
+  window.addEventListener('pagehide', close);
+  return { get file() { return file; }, close, reset };
+}
+
 const AudioRecorder = {
   mediaRecorder: null, chunks: [], stream: null, timer: null,
   async start(onTick) {

@@ -100,7 +100,7 @@
     <!-- Direct submission view (No permissions / login needed) -->
     <div id="viewDirectSubmit" style="display:none;">
       <h3>Raise a Complaint Directly</h3>
-      <p class="muted" style="font-size:0.88rem;">No login needed. Record audio with your microphone; a recording is mandatory and verified through AI sound analysis.</p>
+      <p class="muted" style="font-size:0.88rem;">No login needed. Noise complaints require a microphone recording. For other issues, attach a photo or take a live photo.</p>
 
       <form id="publicComplaintForm">
         <label for="pubCategory">Category</label>
@@ -141,9 +141,10 @@
           </div>
         </div>
 
+        <div id="audioEvidence">
         <label for="pubRecBtn">Microphone recording <span class="required-star">*</span></label>
         <div class="mandatory-audio-notice">
-          <span class="badge-mandatory">Required</span> A microphone recording is mandatory to submit a complaint.
+          <span class="badge-mandatory">Required</span> Noise complaints require a microphone recording.
         </div>
         <div class="rec-box">
           <button type="button" class="secondary" id="pubRecBtn">🎙️ Record with microphone</button>
@@ -152,9 +153,22 @@
           <audio id="pubAudioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
         </div>
 
-        <label for="pubPhoto">Photo evidence (optional)</label>
-        <input type="file" id="pubPhoto" accept="image/*">
-        <img id="pubPhotoPreview" class="photo-preview" alt="Photo preview" style="display:none;">
+        </div>
+        <div id="photoEvidence" hidden>
+          <label for="pubPhoto">Photo evidence (optional)</label>
+          <input type="file" id="pubPhoto" accept="image/*">
+          <div class="btn-row"><button type="button" class="secondary" id="openCamera">Take live photo</button></div>
+          <div id="cameraBox" hidden>
+            <video id="cameraPreview" autoplay playsinline muted style="width:100%; max-height:320px; margin-top:12px;"></video>
+            <div class="btn-row">
+              <button type="button" id="capturePhoto">Capture photo</button>
+              <button type="button" class="secondary" id="closeCamera">Cancel camera</button>
+            </div>
+          </div>
+          <p id="photoError" class="error-msg" role="status"></p>
+          <img id="pubPhotoPreview" class="photo-preview" alt="Selected photo preview">
+          <button type="button" class="auth-link-button" id="removePhoto" hidden>Remove photo</button>
+        </div>
 
         <div class="upload-progress-box" id="pubProgressBox" style="display:none;">
           <div style="font-weight:600; font-size:0.85rem;" id="pubProgressText">Uploading audio evidence…</div>
@@ -165,7 +179,7 @@
         </div>
 
         <button type="submit" style="width:100%; margin-top:18px;" id="pubSubmitBtn" disabled>Submit complaint</button>
-        <p class="muted" id="pubSubmitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">A microphone recording is mandatory to submit a complaint.</p>
+        <p class="muted" id="pubSubmitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">Noise complaints require a microphone recording.</p>
         <p class="error-msg" id="pubErrorMsg" style="display:none;"></p>
         <div id="pubResultBox" style="display:none; margin-top:14px;"></div>
       </form>
@@ -188,6 +202,7 @@
   const viewReset = document.getElementById('viewResetPassword');
 
   function showView(target) {
+    if (target !== viewSubmit) photoEvidence.close();
     [viewLogin, viewSubmit, viewForgot, viewReset].forEach(v => v.style.display = 'none');
     target.style.display = '';
   }
@@ -306,17 +321,16 @@
 
   // Category change sync
   const pubCategorySel = document.getElementById('pubCategory');
+  const photoEvidence = setupPhotoEvidence('pubPhoto');
   const syncNoise = () => {
-    document.getElementById('pubNoiseTypeWrap').style.display = pubCategorySel.value === 'Noise Disturbance' ? '' : 'none';
+    const isNoise = pubCategorySel.value === 'Noise Disturbance';
+    document.getElementById('pubNoiseTypeWrap').style.display = isNoise ? '' : 'none';
+    document.getElementById('audioEvidence').hidden = !isNoise;
+    document.getElementById('photoEvidence').hidden = isNoise;
+    if (isNoise) photoEvidence.close();
+    updatePubSubmitState();
   };
   pubCategorySel.onchange = syncNoise;
-  syncNoise();
-
-  // Photo preview
-  document.getElementById('pubPhoto').onchange = e => {
-    const f = e.target.files[0], img = document.getElementById('pubPhotoPreview');
-    if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
-  };
 
   // Mandatory Audio handling & verification validation
   let pubRecordedFile = null, pubRecording = false;
@@ -326,8 +340,10 @@
   const pubSubmitBtn = document.getElementById('pubSubmitBtn');
   const pubSubmitHint = document.getElementById('pubSubmitHint');
 
+  syncNoise();
+
   function updatePubSubmitState() {
-    const hasAudio = !!pubRecordedFile && audioReady && !pubRecording;
+    const hasAudio = pubCategorySel.value !== 'Noise Disturbance' || (!!pubRecordedFile && audioReady && !pubRecording);
     pubSubmitBtn.disabled = !hasAudio;
     pubSubmitHint.style.display = hasAudio ? 'none' : 'block';
   }
@@ -399,6 +415,7 @@
 
   pubRecBtn.onclick = async () => {
     pubRecBtn.disabled = true;
+    pubCategorySel.disabled = true;
     try {
       if (!pubRecording) {
         pubRecordedFile = null;
@@ -429,6 +446,7 @@
       updatePubSubmitState();
     } finally {
       pubRecBtn.disabled = false;
+      pubCategorySel.disabled = pubRecording;
     }
   };
 
@@ -443,9 +461,10 @@
     errorMsg.style.display = 'none';
     resultBox.style.display = 'none';
 
-    const audioFile = pubRecordedFile;
-    if (!audioFile || !audioReady || pubRecording) {
-      errorMsg.textContent = 'A microphone recording is mandatory to submit a complaint. Please record audio using the microphone button.';
+    const isNoise = pubCategorySel.value === 'Noise Disturbance';
+    const audioFile = isNoise ? pubRecordedFile : null;
+    if (isNoise && (!audioFile || !audioReady || pubRecording)) {
+      errorMsg.textContent = 'Noise complaints require a microphone recording. Please record audio using the microphone button.';
       errorMsg.style.display = 'block';
       updatePubSubmitState();
       return;
@@ -459,13 +478,14 @@
     form.append('description', document.getElementById('pubDescription').value);
     form.append('incident_datetime', document.getElementById('pubDatetime').value);
     form.append('against_unit', document.getElementById('pubAgainstUnit').value);
-    form.append('audio', audioFile);
+    if (audioFile) form.append('audio', audioFile);
 
-    const photoFile = document.getElementById('pubPhoto').files[0];
+    const photoFile = isNoise ? null : photoEvidence.file;
     if (photoFile) form.append('photo', photoFile);
 
+    photoEvidence.close();
     submitBtn.disabled = true;
-    progressBox.style.display = 'block';
+    progressBox.style.display = isNoise ? 'block' : 'none';
     progressText.textContent = 'Uploading evidence & verifying audio with AI…';
 
     try {
@@ -484,7 +504,7 @@
       pubPreview.style.display = 'none';
       pubStatusPill.style.display = 'none';
       pubRecStatus.textContent = '';
-      document.getElementById('pubPhotoPreview').style.display = 'none';
+      photoEvidence.reset();
       syncNoise();
       updatePubSubmitState();
     } catch (err) {

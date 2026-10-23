@@ -28,7 +28,7 @@
   <div id="viewNew">
     <div class="panel">
       <h2>Raise a new complaint</h2>
-      <p class="muted">Audio evidence is <strong>mandatory</strong> for all complaints. Record a short audio clip with your microphone (5–10 seconds) — it is verified by AI (YAMNet) for noise complaints. A photo is optional.</p>
+      <p class="muted">Noise complaints require a short microphone recording. For parking, cleanliness, and other issues, attach a photo or take a live photo (optional).</p>
       <form id="complaintForm">
         <label for="category">Category</label>
         <select id="category" required>
@@ -68,9 +68,10 @@
           </div>
         </div>
 
+        <div id="audioEvidence">
         <label for="recBtn">Microphone recording <span class="required-star">*</span></label>
         <div class="mandatory-audio-notice">
-          <span class="badge-mandatory">Required</span> A microphone recording is mandatory to submit a complaint.
+          <span class="badge-mandatory">Required</span> Noise complaints require a microphone recording.
         </div>
         <div class="rec-box">
           <button type="button" class="secondary" id="recBtn">🎙️ Record with microphone</button>
@@ -79,9 +80,22 @@
           <audio id="audioPreview" controls style="display:none; width:100%; margin-top:8px;"></audio>
         </div>
 
-        <label for="photo">Photo evidence (optional)</label>
-        <input type="file" id="photo" accept="image/*">
-        <img id="photoPreview" class="photo-preview" alt="Photo preview">
+        </div>
+        <div id="photoEvidence" hidden>
+          <label for="photo">Photo evidence (optional)</label>
+          <input type="file" id="photo" accept="image/*">
+          <div class="btn-row"><button type="button" class="secondary" id="openCamera">Take live photo</button></div>
+          <div id="cameraBox" hidden>
+            <video id="cameraPreview" autoplay playsinline muted style="width:100%; max-height:320px; margin-top:12px;"></video>
+            <div class="btn-row">
+              <button type="button" id="capturePhoto">Capture photo</button>
+              <button type="button" class="secondary" id="closeCamera">Cancel camera</button>
+            </div>
+          </div>
+          <p id="photoError" class="error-msg" role="status"></p>
+          <img id="photoPreview" class="photo-preview" alt="Selected photo preview">
+          <button type="button" class="auth-link-button" id="removePhoto" hidden>Remove photo</button>
+        </div>
 
         <div class="upload-progress-box" id="progressBox" style="display:none;">
           <div style="font-weight:600; font-size:0.85rem;" id="progressText">Uploading audio evidence…</div>
@@ -92,7 +106,7 @@
         </div>
 
         <button type="submit" style="margin-top:18px;" id="submitBtn" disabled>Submit complaint</button>
-        <p class="muted" id="submitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">A microphone recording is mandatory to submit a complaint.</p>
+        <p class="muted" id="submitHint" style="font-size:0.82rem; margin-top:4px; text-align:center;">Noise complaints require a microphone recording.</p>
         <p class="error-msg" id="errorMsg" style="display:none;"></p>
         <div id="resultBox" style="display:none; margin-top:14px;"></div>
       </form>
@@ -139,6 +153,7 @@
   const tabNew = document.getElementById('tabNew'), tabMine = document.getElementById('tabMine'), tabAnn = document.getElementById('tabAnn');
   const views = { New: document.getElementById('viewNew'), Mine: document.getElementById('viewMine'), Ann: document.getElementById('viewAnn') };
   function show(name) {
+    if (name !== 'New') photoEvidence.close();
     [['New', tabNew], ['Mine', tabMine], ['Ann', tabAnn]].forEach(([k, b]) => { b.classList.toggle('active', k === name); views[k].style.display = k === name ? '' : 'none'; });
     document.getElementById('newAnnounceBanner').style.display = 'none';
     if (name === 'Mine') loadMine();
@@ -155,14 +170,16 @@
 
   // Noise-type field only matters for noise complaints
   const categorySel = document.getElementById('category');
-  const syncNoise = () => document.getElementById('noiseTypeWrap').style.display = categorySel.value === 'Noise Disturbance' ? '' : 'none';
-  categorySel.onchange = syncNoise; syncNoise();
-
-  // Photo preview
-  document.getElementById('photo').onchange = e => {
-    const f = e.target.files[0], img = document.getElementById('photoPreview');
-    if (f) { img.src = URL.createObjectURL(f); img.style.display = 'block'; } else img.style.display = 'none';
+  const photoEvidence = setupPhotoEvidence('photo');
+  const syncNoise = () => {
+    const isNoise = categorySel.value === 'Noise Disturbance';
+    document.getElementById('noiseTypeWrap').style.display = isNoise ? '' : 'none';
+    document.getElementById('audioEvidence').hidden = !isNoise;
+    document.getElementById('photoEvidence').hidden = isNoise;
+    if (isNoise) photoEvidence.close();
+    updateSubmitState();
   };
+  categorySel.onchange = syncNoise;
 
   // Mandatory Audio handling & verification validation
   let recordedFile = null, recording = false;
@@ -172,8 +189,10 @@
   const submitBtn = document.getElementById('submitBtn');
   const submitHint = document.getElementById('submitHint');
 
+  syncNoise();
+
   function updateSubmitState() {
-    const hasAudio = !!recordedFile && audioReady && !recording;
+    const hasAudio = categorySel.value !== 'Noise Disturbance' || (!!recordedFile && audioReady && !recording);
     submitBtn.disabled = !hasAudio;
     submitHint.style.display = hasAudio ? 'none' : 'block';
   }
@@ -244,6 +263,7 @@
 
   recBtn.onclick = async () => {
     recBtn.disabled = true;
+    categorySel.disabled = true;
     try {
       if (!recording) {
         recordedFile = null;
@@ -274,6 +294,7 @@
       updateSubmitState();
     } finally {
       recBtn.disabled = false;
+      categorySel.disabled = recording;
     }
   };
 
@@ -284,9 +305,10 @@
     const progressText = document.getElementById('progressText');
     errorMsg.style.display = 'none'; resultBox.style.display = 'none';
 
-    const audioFile = recordedFile;
-    if (!audioFile || !audioReady || recording) {
-      errorMsg.textContent = 'A microphone recording is mandatory to submit a complaint. Please record audio using the microphone button.';
+    const isNoise = categorySel.value === 'Noise Disturbance';
+    const audioFile = isNoise ? recordedFile : null;
+    if (isNoise && (!audioFile || !audioReady || recording)) {
+      errorMsg.textContent = 'Noise complaints require a microphone recording. Please record audio using the microphone button.';
       errorMsg.style.display = 'block';
       updateSubmitState();
       return;
@@ -298,12 +320,13 @@
     form.append('description', document.getElementById('description').value);
     form.append('incident_datetime', document.getElementById('incident_datetime').value);
     form.append('against_unit', document.getElementById('against_unit').value);
-    form.append('audio', audioFile);
-    const photoFile = document.getElementById('photo').files[0];
+    if (audioFile) form.append('audio', audioFile);
+    const photoFile = isNoise ? null : photoEvidence.file;
     if (photoFile) form.append('photo', photoFile);
 
+    photoEvidence.close();
     submitBtn.disabled = true;
-    progressBox.style.display = 'block';
+    progressBox.style.display = isNoise ? 'block' : 'none';
     progressText.textContent = 'Uploading evidence & verifying audio with AI…';
 
     try {
@@ -317,7 +340,7 @@
       document.getElementById('complaintForm').reset();
       recordedFile = null; preview.style.display = 'none'; recStatus.textContent = '';
       statusPill.style.display = 'none';
-      document.getElementById('photoPreview').style.display = 'none'; syncNoise();
+      photoEvidence.reset(); syncNoise();
       updateSubmitState();
     } catch (err) {
       errorMsg.textContent = err.message; errorMsg.style.display = 'block';

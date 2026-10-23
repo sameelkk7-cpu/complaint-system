@@ -191,7 +191,7 @@ function parseDetails(c) {
   return { ...c, ai_details, has_photo: !!c.photo_path, has_audio: !!c.audio_path };
 }
 
-// ---------- Submit a complaint (Mandatory Audio Evidence) ----------
+// ---------- Submit a complaint (category-specific evidence) ----------
 router.post('/', optionalAuth, (req, res) => {
   uploadFields(req, res, async (uploadErr) => {
     if (uploadErr) return res.status(400).json({ error: uploadErr.message });
@@ -201,16 +201,24 @@ router.post('/', optionalAuth, (req, res) => {
     const photoFile = req.files?.photo?.[0];
     const cleanup = () => [audioFile, photoFile].forEach(f => f && fs.unlink(f.path, () => {}));
 
-    // Server-side mandatory audio evidence validation
-    if (!audioFile) {
+    const isNoise = category === 'Noise Disturbance';
+    if (!['Noise Disturbance', 'Parking', 'Cleanliness', 'Nuisance', 'Other'].includes(category)) {
+      cleanup();
+      return res.status(400).json({ error: 'Choose a valid complaint category' });
+    }
+    if ((isNoise && photoFile) || (!isNoise && audioFile)) {
+      cleanup();
+      return res.status(400).json({ error: isNoise ? 'Noise complaints accept audio only.' : 'Use photo evidence for this category, not audio.' });
+    }
+    if (isNoise && !audioFile) {
       cleanup();
       return res.status(400).json({
-        error: 'Audio evidence is mandatory to submit a complaint. Please record or upload an audio file.'
+        error: 'Noise complaints require a microphone recording.'
       });
     }
 
     // Server-side audio format, size, and duration validation
-    const audioValidationErr = validateAudioFile(audioFile.path);
+    const audioValidationErr = audioFile ? validateAudioFile(audioFile.path) : null;
     if (audioValidationErr) {
       cleanup();
       return res.status(400).json({ error: audioValidationErr });
@@ -222,26 +230,21 @@ router.post('/', optionalAuth, (req, res) => {
     }
 
     let ai = null;
-    let ai_verdict = 'Pending';
+    let ai_verdict = isNoise ? 'Pending' : 'Not Applicable';
     let status = 'Pending';
 
-    // Every complaint passes through the audio verification workflow
-    try {
-      ai = await analyzeAudio(audioFile.path);
-      ai_verdict = verdictFor(claimed_noise_type, ai);
-    } catch (err) {
-      console.warn('[AI] Verification failed or AI service unavailable:', err.message);
-      // Safely handle failures without inventing fake results
-      ai_verdict = 'Verification Failed';
-      ai = null;
-    }
-
-    // If verification is not successful, do not mark as verified.
-    // Complaints that are not Verified are held as 'Unverified' for admin review and retry.
-    if (ai_verdict === 'Verified') {
-      status = 'Pending';
-    } else {
-      status = 'Unverified';
+    // Only noise complaints need audio analysis; other issues await manual review.
+    if (isNoise) {
+      try {
+        ai = await analyzeAudio(audioFile.path);
+        ai_verdict = verdictFor(claimed_noise_type, ai);
+      } catch (err) {
+        console.warn('[AI] Verification failed or AI service unavailable:', err.message);
+        ai_verdict = 'Verification Failed';
+        ai = null;
+      }
+      // Failed verification is held for admin review and retry.
+      status = ai_verdict === 'Verified' ? 'Pending' : 'Unverified';
     }
 
     // Determine acting user ID (logged-in user of ANY role, or guest resident)
@@ -266,9 +269,9 @@ router.post('/', optionalAuth, (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       actorUserId, category, description.trim(), incident_datetime || null,
-      photoFile ? photoFile.filename : null, audioFile.filename,
+      photoFile ? photoFile.filename : null, audioFile ? audioFile.filename : null,
       ai ? ai.top_category : null, ai ? ai.confidence : null, ai ? ai.noise_level : null,
-      status, blockOf(unit), unit, claimed_noise_type || null, ai_verdict,
+      status, blockOf(unit), unit, isNoise ? (claimed_noise_type || null) : null, ai_verdict,
       ai ? JSON.stringify({
         top_predictions: ai.top_predictions, category_scores: ai.category_scores,
         noise_db_relative: ai.noise_db_relative, active_fraction: ai.active_fraction, mock: !!ai.mock
@@ -276,7 +279,7 @@ router.post('/', optionalAuth, (req, res) => {
     );
 
     logAction(info.lastInsertRowid, actorUserId, 'COMPLAINT_SUBMITTED',
-      `category=${category}, status=${status}, ai_verdict=${ai_verdict}${photoFile ? ', photo' : ''}, audio=mandatory`);
+      `category=${category}, status=${status}, ai_verdict=${ai_verdict}${photoFile ? ', photo' : ''}${audioFile ? ', audio' : ''}`);
 
     res.status(201).json(parseDetails(db.prepare('SELECT * FROM complaints WHERE id = ?').get(info.lastInsertRowid)));
   });
